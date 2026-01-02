@@ -1,0 +1,106 @@
+#pragma once
+#include "instance.h"
+#include <iostream>
+
+namespace he2rt {
+    Instance::Instance(vk::raii::Context& context)
+        : instance{ createInstance(context) }
+        , debugMessenger{ instance, createDebugUtilsMessengerCreateInfo() }
+    {}
+
+	vk::raii::Instance Instance::createInstance(vk::raii::Context& context) {
+        uint32_t glfwExtensionCount;
+        auto glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+        std::vector<const char*> layers{ "VK_LAYER_KHRONOS_validation" };
+        std::vector<const char*> extensions{ glfwExtensions, glfwExtensions + glfwExtensionCount };
+
+        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+
+        vk::InstanceCreateInfo createInfo{
+            {},
+            nullptr,
+            (uint32_t)layers.size(),
+            layers.data(),
+            (uint32_t)extensions.size(),
+            extensions.data(),
+        };
+
+        vk::DebugUtilsMessengerCreateInfoEXT debugMessengerCreateInfo = createDebugUtilsMessengerCreateInfo();
+
+        vk::StructureChain<vk::InstanceCreateInfo, vk::DebugUtilsMessengerCreateInfoEXT> createInfoChain{ createInfo, debugMessengerCreateInfo };
+
+        return { context, createInfoChain.get<vk::InstanceCreateInfo>() };
+	}
+
+    vk::DebugUtilsMessengerCreateInfoEXT Instance::createDebugUtilsMessengerCreateInfo() {
+        return {
+            {},
+            vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError,
+            vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
+            debugCallback,
+            nullptr,
+        };
+    }
+
+    std::optional<PhysicalDevice> Instance::findPhysicalDevice(const vk::Extent2D& desiredExtent, vk::SurfaceKHR surface) {
+        for (auto& physicalDevice : instance.enumeratePhysicalDevices()) {
+            auto properties = physicalDevice.getProperties();
+            auto features = physicalDevice.getFeatures();
+
+            if (properties.deviceType != vk::PhysicalDeviceType::eDiscreteGpu)
+                continue;
+
+            auto extensions = physicalDevice.enumerateDeviceExtensionProperties();
+
+            if (!std::any_of(extensions.begin(), extensions.end(), [](auto& extension) { return !strcmp(extension.extensionName, vk::KHRSwapchainExtensionName); }))
+                continue;
+
+            if (!std::any_of(extensions.begin(), extensions.end(), [](auto& extension) { return !strcmp(extension.extensionName, vk::KHRRayTracingPipelineExtensionName); }))
+                continue;
+
+            if (!std::any_of(extensions.begin(), extensions.end(), [](auto& extension) { return !strcmp(extension.extensionName, vk::KHRSpirv14ExtensionName); }))
+                continue;
+
+            if (!std::any_of(extensions.begin(), extensions.end(), [](auto& extension) { return !strcmp(extension.extensionName, vk::KHRAccelerationStructureExtensionName); }))
+                continue;
+
+            auto queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
+
+            std::optional<uint32_t> graphicsQueueFamilyIdx{};
+            std::optional<uint32_t> presentQueueFamilyIdx{};
+
+            for (uint32_t i = 0; i < queueFamilyProperties.size(); i++) {
+                if (queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics) {
+                    graphicsQueueFamilyIdx = i;
+                }
+
+                if (physicalDevice.getSurfaceSupportKHR(i, surface)) {
+                    presentQueueFamilyIdx = i;
+                }
+            }
+
+            if (graphicsQueueFamilyIdx.has_value() && presentQueueFamilyIdx.has_value()) {
+                PhysicalDevice pDev{ *this, std::move(physicalDevice), { graphicsQueueFamilyIdx.value(), presentQueueFamilyIdx.value() } };
+
+                if (pDev.findSwapchain(desiredExtent, surface).has_value()) {
+                    return pDev;
+                }
+            }
+        }
+
+        return std::nullopt;
+    }
+
+    VKAPI_ATTR VkBool32 VKAPI_CALL Instance::debugCallback(
+        vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+        vk::DebugUtilsMessageTypeFlagsEXT messageType,
+        const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        void* pUserData
+    ) {
+
+        std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+
+        return VK_FALSE;
+    }
+}
