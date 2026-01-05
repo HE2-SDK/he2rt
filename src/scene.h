@@ -33,6 +33,13 @@ namespace he2rt {
 	struct Model {
 		Buffer indexBuffer;
 		Buffer vertexBuffer;
+
+		Model(Buffer&& indexBuffer, Buffer&& vertexBuffer);
+		Model(const Model& other) = delete;
+		Model(Model&& other);
+
+		Model& operator=(const Model& other) = delete;
+		Model& operator=(Model&& other);
 	};
 
 	struct ModelInstance {
@@ -89,7 +96,7 @@ namespace he2rt {
 			for (size_t i = 0; i < vertexBufSize; i++)
 				vertexBuf[i] = vertexData[i].as_primitive().as<unsigned char>();
 
-			std::cout << "Loading model " << name << std::endl;
+			std::cout << " ==== Loading model " << name << " ====" << std::endl;
 			std::cout << "  Index count: " << indexCount << std::endl;
 			std::cout << "  Vertex count: " << vertexCount << std::endl;
 			std::cout << "  Vertex stride: " << vertexStride << std::endl;
@@ -97,28 +104,28 @@ namespace he2rt {
 			//std::cout << "  Bone indices: " << mesh.get_field<"boneIndexCount">().as_primitive().as<unsigned int>() << std::endl;
 			//std::cout << "  Textures: " << mesh.get_field<"textureCount">().as_primitive().as<unsigned int>() << std::endl;
 
-			auto indexBuffer = device.allocator.createBuffer(
+			auto indexBuffer = device.createBuffer(
 				util::align(indexBufSize, 16),
 				16,
-				vk::BufferUsageFlagBits2::eIndexBuffer | vk::BufferUsageFlagBits2::eStorageBuffer | vk::BufferUsageFlagBits2::eAccelerationStructureBuildInputReadOnlyKHR,
-				vma::MemoryUsage::eAuto
+				vk::BufferUsageFlagBits2::eIndexBuffer | vk::BufferUsageFlagBits2::eStorageBuffer | vk::BufferUsageFlagBits2::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits2::eTransferDst
 			);
 
-			auto vertexBuffer = device.allocator.createBuffer(
+			auto vertexBuffer = device.createBuffer(
 				util::align(vertexBufSize, 16),
 				16,
-				vk::BufferUsageFlagBits2::eVertexBuffer | vk::BufferUsageFlagBits2::eStorageBuffer | vk::BufferUsageFlagBits2::eAccelerationStructureBuildInputReadOnlyKHR,
-				vma::MemoryUsage::eAuto
+				vk::BufferUsageFlagBits2::eVertexBuffer | vk::BufferUsageFlagBits2::eStorageBuffer | vk::BufferUsageFlagBits2::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits2::eTransferDst
 			);
 
-			StagingArea staging{ device.allocator };
+			{
+				StagingArea staging{ device };
 
-			staging.addBuffer(indexBuffer, indexBuf.data(), indexBufSize);
-			staging.addBuffer(vertexBuffer, vertexBuf.data(), vertexBufSize);
+				staging.addBuffer(indexBuffer, indexBuf.data(), indexBufSize);
+				staging.addBuffer(vertexBuffer, vertexBuf.data(), vertexBufSize);
 
-			device.runOneTimeCommandBuffer([&](auto& cmd) {
-				staging.upload(cmd);
-			});
+				device.runOneTimeCommandBuffer([&](auto& cmd) {
+					staging.upload(cmd);
+				});
+			}
 
 			vk::AccelerationStructureGeometryTrianglesDataKHR triangles{
 				vk::Format::eR32G32B32Sfloat,
@@ -151,6 +158,7 @@ namespace he2rt {
 			//		std::cout << "      " << textureName << " - " << static_cast<unsigned int>(texture.get_field<"index">().as_primitive().as<unsigned char>()) << std::endl;
 			//	}
 			//}
+			std::cout << " ==== Finished loading model " << name << " ====" << std::endl;
 		}
 
 		void addMeshes(auto meshes) {

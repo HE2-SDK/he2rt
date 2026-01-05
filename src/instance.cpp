@@ -17,13 +17,18 @@ namespace he2rt {
 
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 
+        vk::ApplicationInfo appInfo{
+            "he2rt",
+            0,
+            "he2rt",
+            0,
+            VK_API_VERSION_1_4,
+        };
         vk::InstanceCreateInfo createInfo{
             {},
-            nullptr,
-            (uint32_t)layers.size(),
-            layers.data(),
-            (uint32_t)extensions.size(),
-            extensions.data(),
+            &appInfo,
+            layers,
+            extensions,
         };
 
         vk::DebugUtilsMessengerCreateInfoEXT debugMessengerCreateInfo = createDebugUtilsMessengerCreateInfo();
@@ -63,6 +68,14 @@ namespace he2rt {
                 continue;
 
             if (!std::any_of(extensions.begin(), extensions.end(), [](auto& extension) { return !strcmp(extension.extensionName, vk::KHRAccelerationStructureExtensionName); }))
+                continue;
+
+            if (!std::any_of(extensions.begin(), extensions.end(), [](auto& extension) { return !strcmp(extension.extensionName, vk::KHRBufferDeviceAddressExtensionName); }))
+                continue;
+
+            auto features2 = physicalDevice.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan12Features>();
+
+            if (features2.get<vk::PhysicalDeviceVulkan12Features>().bufferDeviceAddress != vk::True)
                 continue;
 
             auto queueFamilyProperties = physicalDevice.getQueueFamilyProperties();

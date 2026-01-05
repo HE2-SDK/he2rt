@@ -4,6 +4,14 @@
 
 namespace he2rt {
     PhysicalDevice::PhysicalDevice(Instance& instance, vk::raii::PhysicalDevice&& physicalDevice, const Indices& queueIndices) : instance{ instance }, physicalDevice { std::move(physicalDevice) }, queueIndices{ queueIndices } {
+        auto properties2 = this->physicalDevice.getProperties2<
+            vk::PhysicalDeviceProperties2,
+            vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
+            vk::PhysicalDeviceRayTracingPipelinePropertiesKHR
+        >();
+
+        accelerationStructureProperties = properties2.get<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
+        rayTracingPipelineProperties = properties2.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>();
 	}
 
     Device PhysicalDevice::createDevice() {
@@ -18,27 +26,37 @@ namespace he2rt {
 
         std::vector<const char*> extensions{
             vk::KHRSwapchainExtensionName,
-            vk::KHRRayTracingPipelineExtensionName,
-            vk::KHRSpirv14ExtensionName,
-            vk::KHRShaderFloatControlsExtensionName,
             vk::KHRAccelerationStructureExtensionName,
-            vk::EXTDescriptorIndexingExtensionName,
-            vk::KHRBufferDeviceAddressExtensionName,
+            vk::KHRRayTracingPipelineExtensionName,
             vk::KHRDeferredHostOperationsExtensionName,
         };
 
-        vk::PhysicalDeviceFeatures deviceFeatures{};
-        vk::DeviceCreateInfo createInfo{
-            {},
-            (uint32_t)queueCreateInfos.size(),
-            queueCreateInfos.data(),
-            0,
-            nullptr,
-            (uint32_t)extensions.size(),
-            extensions.data(),
+        auto features2 = physicalDevice.getFeatures2<
+            vk::PhysicalDeviceFeatures2,
+            vk::PhysicalDeviceVulkan11Features,
+            vk::PhysicalDeviceVulkan12Features,
+            vk::PhysicalDeviceVulkan13Features,
+            vk::PhysicalDeviceVulkan14Features,
+            vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
+            vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
+        >();
+
+        auto createInfoChain = vk::StructureChain{
+            vk::DeviceCreateInfo{
+                {},
+                queueCreateInfos,
+                {},
+                extensions,
+            },
+            features2.get<vk::PhysicalDeviceVulkan11Features>(),
+            features2.get<vk::PhysicalDeviceVulkan12Features>(),
+            features2.get<vk::PhysicalDeviceVulkan13Features>(),
+            features2.get<vk::PhysicalDeviceVulkan14Features>(),
+            features2.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>(),
+            features2.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>(),
         };
 
-        return { *this, { physicalDevice, createInfo } };
+        return { *this, { physicalDevice, createInfoChain.get<vk::DeviceCreateInfo>() }};
     }
 
     std::optional<SwapchainDescription> PhysicalDevice::findSwapchain(const vk::Extent2D& desiredExtent, vk::SurfaceKHR surface) {

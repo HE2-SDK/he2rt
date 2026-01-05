@@ -5,8 +5,44 @@
 #include <optional>
 #include <set>
 #include "instance.h"
+#include "scene.h"
+#include "raytracing-engine.h"
+
+VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
 using namespace he2rt;
+
+class GBuffer {
+public:
+    Image image;
+    vk::raii::ImageView imageView;
+    vk::ImageMemoryBarrier2 barrier;
+
+    GBuffer(Device& device, Swapchain& swapchain, vk::Format format)
+        : image{ device.createImage({
+            {},
+            vk::ImageType::e2D,
+            format,
+            { swapchain.description.extent.width, swapchain.description.extent.height, 1 },
+            1,
+            1,
+            vk::SampleCountFlagBits::e1,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc,
+            vk::SharingMode::eExclusive,
+            {},
+            vk::ImageLayout::eGeneral,
+        }) }
+        , imageView{ device.device.createImageView({
+            {},
+            image.image,
+            vk::ImageViewType::e2D,
+            format,
+            { vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eOne },
+            { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 },
+        }) }
+    {}
+};
 
 vk::raii::SurfaceKHR createSurface(Instance& instance, GLFWwindow * window) {
     VkSurfaceKHR surface;
@@ -110,6 +146,8 @@ int main(void) {
     //    }
     //});
 
+    VULKAN_HPP_DEFAULT_DISPATCHER.init();
+
     if (!glfwInit())
         return -1;
 
@@ -127,6 +165,8 @@ int main(void) {
         vk::raii::Context context{};
         Instance instance{ context };
 
+        VULKAN_HPP_DEFAULT_DISPATCHER.init(static_cast<vk::Instance>(instance.instance));
+
         vk::Extent2D desiredExtent{ (uint32_t)width, (uint32_t)height };
 
         auto surface = createSurface(instance, window);
@@ -137,12 +177,98 @@ int main(void) {
 
         auto physicalDevice = std::move(*maybePhysicalDevice);
         auto device = physicalDevice.createDevice();
+
+        VULKAN_HPP_DEFAULT_DISPATCHER.init(static_cast<vk::Device>(device.device));
+
         auto swapchain = device.createSwapchain(desiredExtent, surface);
+        Scene scene{ device };
+
+        std::cout << "swap chain contains " << swapchain.images.size() << " images." << std::endl;
+
+        std::ifstream ims{ "chr_sonic.model", std::ios::binary };
+        rip::binary::containers::needle_archive::v1::NeedleArchiveReader<unsigned int> reader{ ims };
+        reader.forEachChunk([&](auto& chunk) {
+            if (chunk.header.magic == "NEDMDLV5") {
+                scene.addModel(ims);
+            }
+        });
+
+        mat34 tf{ mat34::Identity() };
+
+        scene.tlasInstances.push_back(vk::AccelerationStructureInstanceKHR{
+            *reinterpret_cast<vk::TransformMatrixKHR*>(&tf),
+            0,
+            0xFF,
+            0,
+            vk::GeometryInstanceFlagBitsKHR::eTriangleCullDisable,
+            scene.blases[0].deviceAddress,
+        });
+
+        scene.buildTLAS();
+
+        auto commandPool = device.device.createCommandPool({ vk::CommandPoolCreateFlagBits::eResetCommandBuffer, physicalDevice.queueIndices.graphics });
+
+        constexpr size_t inFlightFrameCount = 2;
+        size_t currentFrame{};
+
+        std::vector<vk::raii::Fence> frameFences{};
+        std::vector<vk::raii::Semaphore> acquireSemaphores{};
+        std::vector<vk::raii::CommandBuffer> commandBuffers{};
+
+        GBuffer gbuffer{ device, swapchain, vk::Format::eR32G32B32A32Sfloat };
+        GBuffer tonemappedGbuffer{ device, swapchain, vk::Format::eB8G8R8A8Unorm };
+
+        for (size_t i = 0; i < inFlightFrameCount; i++) {
+            frameFences.emplace_back(device.device.createFence({ vk::FenceCreateFlagBits::eSignaled }));
+            acquireSemaphores.emplace_back(device.device.createSemaphore({}));
+            commandBuffers.emplace_back(std::move(device.device.allocateCommandBuffers({ commandPool, vk::CommandBufferLevel::ePrimary, 1 })[0]));
+        }
+
+        RaytracingEngine engine{ device, scene };
+
+        mat44 projMat{ projectionMatrix(60.0f, swapchain.description.extent.width / swapchain.description.extent.height, 10.0f, 10000.0f) };
+        engine.globalPushConstant.projInverse = projMat.inverse();
 
         glfwMakeContextCurrent(window);
 
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
+
+            auto frameFence = vk::Fence{ frameFences[currentFrame] };
+            auto acquireSemaphore = vk::Semaphore{ acquireSemaphores[currentFrame] };
+            auto commandBuffer = vk::CommandBuffer{ commandBuffers[currentFrame] };
+
+            device.device.waitForFences({ frameFence }, vk::True, UINT64_MAX);
+            device.device.resetFences({ frameFence });
+
+            auto imageIndex = swapchain.swapchain.acquireNextImage(UINT64_MAX, acquireSemaphore).value;
+
+            auto submitSemaphore = vk::Semaphore{ swapchain.imageReadySemaphores[imageIndex] };
+
+            commandBuffer.reset();
+            commandBuffer.begin({ vk::CommandBufferUsageFlags{} });
+
+            auto gbufferImageView = vk::ImageView{ gbuffer.imageView };
+            engine.raytrace(commandBuffer, gbufferImageView, swapchain.description.extent);
+
+            vk::ImageCopy imageCopy{
+                { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+                { 0, 0, 0 },
+                { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+                { 0, 0, 0 },
+                { swapchain.description.extent.width, swapchain.description.extent.height, 1 },
+            };
+            commandBuffer.copyImage(framebuffer, vk::ImageLayout::eGeneral, swapchain.images[imageIndex], vk::ImageLayout::ePresentSrcKHR, { imageCopy });
+
+            commandBuffer.end();
+
+            vk::PipelineStageFlags stageFlags{ vk::PipelineStageFlagBits::eRayTracingShaderKHR };
+            device.queues.graphics.submit({ { { acquireSemaphore }, { stageFlags }, { commandBuffer }, { submitSemaphore } } }, frameFence);
+
+            auto swp = vk::SwapchainKHR{ swapchain.swapchain };
+            device.queues.present.presentKHR({ { submitSemaphore }, { swp }, { imageIndex } });
+
+            currentFrame = (currentFrame + 1) % inFlightFrameCount;
         }
     }
 

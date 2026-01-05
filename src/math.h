@@ -31,3 +31,16 @@ static_assert(alignof(vec4) == 16, "vec4 must be 16 aligned");
 static_assert(alignof(quat) == 16, "quat must be 16 aligned");
 static_assert(alignof(mat34) == 16, "mat34 must be 16 aligned");
 static_assert(alignof(mat44) == 16, "mat44 must be 16 aligned");
+
+inline mat44 projectionMatrix(float fov, float ratio, float near, float far) {
+    float focalLength = 1 / tanf(fov * 0.5f * EIGEN_PI / 180.0f);
+
+    mat44 res{};
+    res.matrix() <<
+        focalLength, 0.0f, 0.0f, 0.0f,
+        0.0f, focalLength * ratio, 0.0f, 0.0f,
+        0.0f, 0.0f, -far / (far - near), -1.0f,
+        0.0f, 0.0f, -(far * near) / (far - near), 0.0f;
+
+    return res;
+}

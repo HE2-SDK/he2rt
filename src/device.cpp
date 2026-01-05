@@ -7,8 +7,8 @@ namespace he2rt {
     Device::Device(PhysicalDevice& physicalDevice, vk::raii::Device&& device)
         : physicalDevice{ physicalDevice }
         , queues{ device.getQueue(physicalDevice.queueIndices.graphics, 0), device.getQueue(physicalDevice.queueIndices.present, 0) }
-        , allocator{ std::move(vma::raii::Allocator{ physicalDevice.instance.instance, device, vma::AllocatorCreateInfo{ {}, physicalDevice.physicalDevice } }) }
         , device { std::move(device) }
+        , allocator{ physicalDevice.instance.instance, this->device, vma::AllocatorCreateInfo{ vma::AllocatorCreateFlagBits::eBufferDeviceAddress | vma::AllocatorCreateFlagBits::eKhrMaintenance4 | vma::AllocatorCreateFlagBits::eKhrMaintenance5, physicalDevice.physicalDevice, {}, {}, nullptr, nullptr, nullptr, nullptr, {}, VK_API_VERSION_1_4 } }
         , tempCommands{ this->device.createCommandPool({ {}, physicalDevice.queueIndices.graphics }) }
     {
 	}
@@ -37,7 +37,7 @@ namespace he2rt {
             description.surfaceFormat.colorSpace,
             description.extent,
             1,
-            vk::ImageUsageFlagBits::eColorAttachment,
+            vk::ImageUsageFlagBits::eTransferDst, //vk::ImageUsageFlagBits::eColorAttachment,
             sameQueue ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
             sameQueue ? (uint32_t)queueIndices.size() : 0,
             sameQueue ? queueIndices.data() : nullptr,
@@ -49,24 +49,51 @@ namespace he2rt {
         }), *maybeDesc };
     }
 
-    AccelerationStructure Device::createAS(const vk::AccelerationStructureBuildSizesInfoKHR& buildSizes) {
-        auto buffer = allocator.createBuffer(
+    Buffer Device::createBuffer(vk::DeviceSize size, vk::DeviceSize alignment, vk::BufferUsageFlags2 bufferUsage, vma::MemoryUsage memoryUsage, vma::AllocationCreateFlags allocationCreateFlags, vk::MemoryPropertyFlags memoryPropertyRequiredFlags) {
+        vk::BufferCreateInfo createInfo{ {}, size, {}, vk::SharingMode::eExclusive };
+        vk::BufferUsageFlags2CreateInfo usageCreateInfo{ bufferUsage | vk::BufferUsageFlagBits2::eShaderDeviceAddress };
+
+        auto createInfoChain = vk::StructureChain{ createInfo, usageCreateInfo };
+
+        return createBuffer(createInfoChain.get<vk::BufferCreateInfo>(), { allocationCreateFlags, memoryUsage, memoryPropertyRequiredFlags }, alignment);
+    }
+
+    Buffer Device::createBuffer(const vk::BufferCreateInfo& bufferCreateInfo, const vma::AllocationCreateInfo& allocationCreateInfo, vk::DeviceSize alignment) {
+        vma::AllocationInfo allocInfo{};
+
+        auto buffer = allocator.createBufferWithAlignment(bufferCreateInfo, allocationCreateInfo, alignment, allocInfo);
+        auto addr = device.getBufferAddress({ vk::Buffer{ buffer } });
+
+        return { std::move(buffer), bufferCreateInfo.size, addr, allocInfo.pMappedData };
+    }
+
+    Image Device::createImage(const vk::ImageCreateInfo& imageCreateInfo, vma::MemoryUsage memoryUsage, vma::AllocationCreateFlags allocationCreateFlags, vk::MemoryPropertyFlags memoryPropertyRequiredFlags) {
+        return createImage(imageCreateInfo, { allocationCreateFlags, memoryUsage, memoryPropertyRequiredFlags });
+    }
+
+    Image Device::createImage(const vk::ImageCreateInfo& imageCreateInfo, const vma::AllocationCreateInfo& allocationCreateInfo) {
+        vma::AllocationInfo allocInfo{};
+
+        auto image = allocator.createImage(imageCreateInfo, allocationCreateInfo, allocInfo);
+
+        return { std::move(image), imageCreateInfo };
+    }
+
+    AccelerationStructure Device::createAS(vk::AccelerationStructureTypeKHR type, const vk::AccelerationStructureBuildSizesInfoKHR& buildSizes) {
+        auto buffer = createBuffer(
             buildSizes.accelerationStructureSize,
-            0,
-            vk::BufferUsageFlagBits2::eAccelerationStructureStorageKHR | vk::BufferUsageFlagBits2::eShaderDeviceAddress,
+            1,
+            vk::BufferUsageFlagBits2::eStorageBuffer | vk::BufferUsageFlagBits2::eAccelerationStructureStorageKHR,
             vma::MemoryUsage::eAutoPreferDevice
         );
 
-        auto structure = device.createAccelerationStructureKHR({ {}, buffer.buffer, {}, buildSizes.accelerationStructureSize, vk::AccelerationStructureTypeKHR::eBottomLevel });
+        auto structure = device.createAccelerationStructureKHR({ {}, buffer.buffer, {}, buildSizes.accelerationStructureSize, type });
         auto deviceAddress = device.getAccelerationStructureAddressKHR({ vk::AccelerationStructureKHR{ structure } });
 
         return { std::move(buffer), std::move(structure), deviceAddress };
     }
 
     AccelerationStructure Device::buildAS(vk::AccelerationStructureTypeKHR type, const vk::AccelerationStructureGeometryKHR& geometry, const vk::AccelerationStructureBuildRangeInfoKHR& rangeInfo) {
-        //TODO: fetch
-        vk::PhysicalDeviceAccelerationStructurePropertiesKHR properties{};
-
         vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo{
             type,
             vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
@@ -78,14 +105,13 @@ namespace he2rt {
 
         auto buildSizes = device.getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice, geometryInfo, { rangeInfo.primitiveCount });
 
-        auto scratchBuffer = allocator.createBuffer(
-            util::align(buildSizes.buildScratchSize, properties.minAccelerationStructureScratchOffsetAlignment),
-            properties.minAccelerationStructureScratchOffsetAlignment,
-            vk::BufferUsageFlagBits2::eStorageBuffer | vk::BufferUsageFlagBits2::eShaderDeviceAddress | vk::BufferUsageFlagBits2::eAccelerationStructureStorageKHR,
-            vma::MemoryUsage::eAuto
+        auto scratchBuffer = createBuffer(
+            util::align(buildSizes.buildScratchSize, physicalDevice.accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment),
+            physicalDevice.accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment,
+            vk::BufferUsageFlagBits2::eStorageBuffer | vk::BufferUsageFlagBits2::eAccelerationStructureStorageKHR
         );
 
-        auto as = createAS(buildSizes);
+        auto as = createAS(type, buildSizes);
 
         geometryInfo.dstAccelerationStructure = as.structure;
         geometryInfo.scratchData.deviceAddress = scratchBuffer.deviceAddress;

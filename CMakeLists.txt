@@ -28,28 +28,31 @@ set(DEVTOOLS_UPDATE_SERVER_PATH "" CACHE PATH "Path to update server")
 
 #add_subdirectory(shaders)
 set(SHADERS
-    shaders/basic.vert
-    shaders/basic.frag
+    shaders/raytracing.slang
 )
 
 foreach(source IN LISTS SHADERS)
   get_filename_component(FILENAME ${source} NAME)
   add_custom_command(
     COMMAND
-      "C:/VulkanSDK/1.4.335.0/Bin/glslc.exe"
+      "C:/VulkanSDK/1.4.335.0/Bin/slangc.exe"
+      -source-embed-style u8
       -o ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv
       ${CMAKE_CURRENT_SOURCE_DIR}/${source}
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${source}
     COMMENT "Compiling ${FILENAME}"
   )
-  list(APPEND SPV_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv)
+  list(APPEND SPV_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h)
 endforeach()
 
 add_executable(he2-rt ${SPV_SHADERS})
-target_include_directories(he2-rt PRIVATE "C:/VulkanSDK/1.4.335.0/Include")
+target_include_directories(he2-rt PRIVATE "C:/VulkanSDK/1.4.335.0/Include" ${CMAKE_CURRENT_BINARY_DIR})
 target_link_directories(he2-rt PRIVATE "C:/VulkanSDK/1.4.335.0/Lib")
 target_link_libraries(he2-rt PRIVATE vulkan-1 glfw VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp Eigen3::Eigen rip-hl)
 target_compile_features(he2-rt PRIVATE cxx_std_20)
+target_compile_definitions(he2-rt PRIVATE
+    VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
+)
 
 add_subdirectory(src)

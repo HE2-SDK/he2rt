@@ -20,6 +20,8 @@ namespace he2rt {
         Instance& instance;
         vk::raii::PhysicalDevice physicalDevice;
         Indices queueIndices{};
+        vk::PhysicalDeviceAccelerationStructurePropertiesKHR accelerationStructureProperties{};
+        vk::PhysicalDeviceRayTracingPipelinePropertiesKHR rayTracingPipelineProperties{};
 
 		PhysicalDevice(Instance& instance, vk::raii::PhysicalDevice&& physicalDevice, const Indices& queueIndices);
 

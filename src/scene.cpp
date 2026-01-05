@@ -1,8 +1,22 @@
 #include "scene.h"
+#include <iostream>
 
 using GI = ucsl::reflection::game_interfaces::standalone::StandaloneGameInterface;
 
 namespace he2rt {
+    Model::Model(Buffer&& indexBuffer, Buffer&& vertexBuffer) : indexBuffer{ std::move(indexBuffer) }, vertexBuffer{ std::move(vertexBuffer) } {
+    }
+
+    Model::Model(Model&& other) : indexBuffer{ std::move(other.indexBuffer) }, vertexBuffer{ std::move(other.vertexBuffer) } {
+    }
+
+    Model& Model::operator=(Model&& other) {
+        std::cout << "moving assigning model" << std::endl;
+        indexBuffer = std::move(other.indexBuffer);
+        vertexBuffer = std::move(other.vertexBuffer);
+        return *this;
+    }
+
     Scene::Scene(Device& device) : device{ device } {
     }
 
@@ -36,15 +50,17 @@ namespace he2rt {
 	}
 
     void Scene::buildTLAS() {
-        auto buffer = device.allocator.createBuffer(
+        auto buffer = device.createBuffer(
             tlasInstances.size() * sizeof(vk::AccelerationStructureInstanceKHR),
             16,
-            vk::BufferUsageFlagBits2::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits2::eShaderDeviceAddress
+            vk::BufferUsageFlagBits2::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits2::eShaderDeviceAddress | vk::BufferUsageFlagBits2::eTransferDst
         );
 
-        StagingArea staging{ device.allocator };
-        staging.addBuffer(buffer, std::span{ tlasInstances });
-        device.runOneTimeCommandBuffer([&](auto& cmd) { staging.upload(cmd); });
+        {
+            StagingArea staging{ device };
+            staging.addBuffer(buffer, std::span{ tlasInstances });
+            device.runOneTimeCommandBuffer([&](auto& cmd) { staging.upload(cmd); });
+        }
 
         vk::AccelerationStructureGeometryInstancesDataKHR geometryInstances{ {}, { buffer.deviceAddress } };
         vk::AccelerationStructureGeometryKHR geometry{ vk::GeometryTypeKHR::eInstances, geometryInstances };

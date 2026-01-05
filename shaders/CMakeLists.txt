@@ -1,5 +1,5 @@
 set(SHADERS
-    vert.glsl
+    raytracing.slang
 )
 
 foreach(source IN LISTS SHADERS)

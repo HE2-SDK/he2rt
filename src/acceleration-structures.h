@@ -8,5 +8,12 @@ namespace he2rt {
 		Buffer buffer;
 		vk::raii::AccelerationStructureKHR structure;
 		vk::DeviceAddress deviceAddress;
+
+		AccelerationStructure(Buffer&& buffer, vk::raii::AccelerationStructureKHR&& structure, vk::DeviceAddress deviceAddress) noexcept;
+		AccelerationStructure(const AccelerationStructure& other) = delete;
+		AccelerationStructure(AccelerationStructure&& other) noexcept;
+
+		AccelerationStructure& operator=(const AccelerationStructure& other) = delete;
+		AccelerationStructure& operator=(AccelerationStructure&& other) noexcept;
 	};
 }
