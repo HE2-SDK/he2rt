@@ -24,11 +24,11 @@ namespace he2rt {
 
     vk::raii::PipelineLayout RaytracingEngine::createPipelineLayout() {
         std::array<vk::DescriptorSetLayout, 1> descriptorSetLayouts{ {
-            { vk::DescriptorSetLayout{ descriptorSetLayout } },
+            descriptorSetLayout,
         } };
 
         std::array<vk::PushConstantRange, 1> pushConstantRanges{ {
-            { vk::ShaderStageFlagBits::eAll, 0u, sizeof(globalPushConstant) },
+            { vk::ShaderStageFlagBits::eAll, 0u, sizeof(shaders::PushConstant) },
         } };
 
         return device.device.createPipelineLayout({ {}, descriptorSetLayouts, pushConstantRanges });
@@ -49,7 +49,7 @@ namespace he2rt {
         std::array<vk::RayTracingShaderGroupCreateInfoKHR, 3> groups{ {
             { vk::RayTracingShaderGroupTypeKHR::eGeneral, 0u },
             { vk::RayTracingShaderGroupTypeKHR::eGeneral, 1u },
-            { vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup, {}, 2u },
+            { vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup, vk::ShaderUnusedKHR, 2u },
         } };
 
         return device.device.createRayTracingPipelineKHR(nullptr, nullptr, { {}, stages, groups, 3u, {}, {}, {}, pipelineLayout });
@@ -67,6 +67,15 @@ namespace he2rt {
         for (size_t i = 0; i < groupCount; i++) {
             offsets[i] = currentOffset;
             currentOffset = util::align(util::align(currentOffset + rtpProps.shaderGroupHandleSize, rtpProps.shaderGroupHandleAlignment), rtpProps.shaderGroupBaseAlignment);
+        }
+        
+        std::cout << "Handle size: " << std::hex << rtpProps.shaderGroupHandleSize << std::dec << std::endl;
+        std::cout << "Handle alignment: " << std::hex << rtpProps.shaderGroupHandleAlignment << std::dec << std::endl;
+        std::cout << "Base alignment: " << std::hex << rtpProps.shaderGroupBaseAlignment << std::dec << std::endl;
+        std::cout << "Buffer size: " << std::hex << currentOffset << std::dec << std::endl;
+
+        for (uint32_t offset : offsets) {
+            std::cout << "Offset: " << std::hex << offset << std::dec << std::endl;
         }
 
         auto buffer = device.createBuffer(
@@ -94,13 +103,18 @@ namespace he2rt {
         callableRegion.stride = 0;
         callableRegion.size = 0;
 
+        std::cout << std::hex << "RAYGEN region: " << raygenRegion.deviceAddress << ", " << raygenRegion.stride << ", " << raygenRegion.size << std::dec << std::endl;
+        std::cout << std::hex << "MISS region: " << missRegion.deviceAddress << ", " << missRegion.stride << ", " << missRegion.size << std::dec << std::endl;
+        std::cout << std::hex << "HIT region: " << hitRegion.deviceAddress << ", " << hitRegion.stride << ", " << hitRegion.size << std::dec << std::endl;
+        std::cout << std::hex << "CALLABLE region: " << callableRegion.deviceAddress << ", " << callableRegion.stride << ", " << callableRegion.size << std::dec << std::endl;
+
         return buffer;
     }
 
     void RaytracingEngine::raytrace(vk::CommandBuffer& cmd, vk::ImageView& outputImage, const vk::Extent2D& viewport) {
-        mat34 view{ Eigen::Translation3f{ 2.0f, 0.0f, 0.0f } };
+        Eigen::Matrix4f view{ Eigen::Matrix4f::Identity() };
 
-        globalPushConstant.viewInverse = view.inverse();
+        globalPushConstant.viewInverse = view; // view.inverse().matrix();
 
         cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, pipeline);
         //cmd.bindDescriptorSets2({ vk::ShaderStageFlagBits::eAll, pipelineLayout, 0, 1, WQEFVEWQFEW });
@@ -117,7 +131,12 @@ namespace he2rt {
         std::array<const vk::WriteDescriptorSet, 2> writes{ { tlasWrite.get<vk::WriteDescriptorSet>(), outImgWrite } };
         cmd.pushDescriptorSet(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, writes);
 
-        cmd.pushConstants2({ pipelineLayout, vk::ShaderStageFlagBits::eAll, 0, sizeof(PushConstant), &globalPushConstant });
+        cmd.pushConstants<shaders::PushConstant>(pipelineLayout, vk::ShaderStageFlagBits::eAll, 0, { globalPushConstant });
         cmd.traceRaysKHR(raygenRegion, missRegion, hitRegion, callableRegion, viewport.width, viewport.height, 1);
+
+        std::array<vk::MemoryBarrier2, 1> memoryBarriers{ {
+            vk::MemoryBarrier2{ vk::PipelineStageFlagBits2::eRayTracingShaderKHR, vk::AccessFlagBits2::eShaderWrite, vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderRead }
+        } };
+        cmd.pipelineBarrier2({ {}, memoryBarriers });
     }
 }

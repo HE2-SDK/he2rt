@@ -22,14 +22,18 @@ namespace he2rt {
 	void StagingArea::addBuffer(Buffer& buffer, void* data, size_t size) {
 		assert(size <= buffer.size);
 
-		items.emplace_back(buffer, device.createBuffer(
+		auto stagingBuffer = device.createBuffer(
 			buffer.size,
-			0,
+			16,
 			vk::BufferUsageFlagBits2::eTransferSrc | vk::BufferUsageFlagBits2::eTransferDst | vk::BufferUsageFlagBits2::eShaderDeviceAddress,
 			vma::MemoryUsage::eAutoPreferHost,
 			vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped,
 			vk::MemoryPropertyFlagBits::eHostCoherent
-		), vk::BufferCopy2{ 0, 0, buffer.size });
+		);
+
+		memcpy(stagingBuffer.hostAddress, data, size);
+
+		items.emplace_back(buffer, std::move(stagingBuffer), vk::BufferCopy2{0, 0, buffer.size});
 	}
 
 	void StagingArea::upload(vk::CommandBuffer cmdBuffer) {

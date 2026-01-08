@@ -7,6 +7,7 @@
 #include "instance.h"
 #include "scene.h"
 #include "raytracing-engine.h"
+#include "post-processing/tonemapper/tonemapper.h"
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
@@ -31,14 +32,14 @@ public:
             vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc,
             vk::SharingMode::eExclusive,
             {},
-            vk::ImageLayout::eGeneral,
+            vk::ImageLayout::eUndefined,
         }) }
         , imageView{ device.device.createImageView({
             {},
             image.image,
             vk::ImageViewType::e2D,
             format,
-            { vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eOne },
+            { vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity },
             { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 },
         }) }
     {}
@@ -152,7 +153,7 @@ int main(void) {
         return -1;
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    auto* window = glfwCreateWindow(640, 480, "HE2 RT", NULL, NULL);
+    auto* window = glfwCreateWindow(1920, 1080, "HE2 RT", NULL, NULL);
     if (!window) {
         glfwTerminate();
         return -1;
@@ -193,10 +194,11 @@ int main(void) {
             }
         });
 
-        mat34 tf{ mat34::Identity() };
+        using VulkanCompatibleTransform = Eigen::Transform<float, 3, Eigen::AffineCompact, Eigen::RowMajor>;
+        VulkanCompatibleTransform tf{ Eigen::Translation3f{ 0.0f, 0.0f, -2.0f } };
 
         scene.tlasInstances.push_back(vk::AccelerationStructureInstanceKHR{
-            *reinterpret_cast<vk::TransformMatrixKHR*>(&tf),
+            *reinterpret_cast<vk::TransformMatrixKHR*>(tf.data()),
             0,
             0xFF,
             0,
@@ -204,6 +206,7 @@ int main(void) {
             scene.blases[0].deviceAddress,
         });
 
+        scene.generateMeshBuffer();
         scene.buildTLAS();
 
         auto commandPool = device.device.createCommandPool({ vk::CommandPoolCreateFlagBits::eResetCommandBuffer, physicalDevice.queueIndices.graphics });
@@ -217,6 +220,48 @@ int main(void) {
 
         GBuffer gbuffer{ device, swapchain, vk::Format::eR32G32B32A32Sfloat };
         GBuffer tonemappedGbuffer{ device, swapchain, vk::Format::eB8G8R8A8Unorm };
+        Sampler gbufferSampler{ device.createSampler({}) };
+        vk::ImageSubresourceRange colorRange{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
+
+        device.runOneTimeCommandBuffer([&](vk::CommandBuffer& cmd) {
+            std::array<GBuffer*, 2> gbuffers{ &gbuffer, &tonemappedGbuffer };
+
+            size_t i{};
+            for (auto* gbuf : gbuffers) {
+                std::array<vk::ImageMemoryBarrier2, 1> imageBarrierBeforeClear{ {
+                    {
+                        vk::PipelineStageFlagBits2::eNone,
+                        vk::AccessFlagBits2::eNone,
+                        vk::PipelineStageFlagBits2::eTransfer,
+                        vk::AccessFlagBits2::eTransferWrite,
+                        vk::ImageLayout::eUndefined,
+                        vk::ImageLayout::eTransferDstOptimal,
+                        vk::QueueFamilyIgnored,
+                        vk::QueueFamilyIgnored,
+                        gbuf->image.image,
+                        colorRange,
+                    },
+                } };
+                cmd.pipelineBarrier2({ {}, {}, {}, imageBarrierBeforeClear });
+                cmd.clearColorImage(gbuf->image.image, vk::ImageLayout::eTransferDstOptimal, i++ == 0 ? vk::ClearColorValue{ 0.0f, 1.0f, 0.0f, 1.0f } : vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f }, colorRange);
+
+                std::array<vk::ImageMemoryBarrier2, 1> imageBarrierAfterClear{ {
+                    {
+                        vk::PipelineStageFlagBits2::eTransfer,
+                        vk::AccessFlagBits2::eTransferWrite,
+                        vk::PipelineStageFlagBits2::eAllGraphics | vk::PipelineStageFlagBits2::eAllCommands,
+                        vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+                        vk::ImageLayout::eTransferDstOptimal,
+                        vk::ImageLayout::eGeneral,
+                        vk::QueueFamilyIgnored,
+                        vk::QueueFamilyIgnored,
+                        gbuf->image.image,
+                        colorRange,
+                    },
+                } };
+                cmd.pipelineBarrier2({ {}, {}, {}, imageBarrierAfterClear });
+            }
+        });
 
         for (size_t i = 0; i < inFlightFrameCount; i++) {
             frameFences.emplace_back(device.device.createFence({ vk::FenceCreateFlagBits::eSignaled }));
@@ -225,9 +270,11 @@ int main(void) {
         }
 
         RaytracingEngine engine{ device, scene };
+        shaders::tonemapper::Tonemapper tonemapper{ device };
 
-        mat44 projMat{ projectionMatrix(60.0f, swapchain.description.extent.width / swapchain.description.extent.height, 10.0f, 10000.0f) };
+        float4x4 projMat{ projectionMatrix(60.0f, static_cast<float>(swapchain.description.extent.width) / static_cast<float>(swapchain.description.extent.height), 0.1f, 60000.0f) };
         engine.globalPushConstant.projInverse = projMat.inverse();
+        engine.globalPushConstant.meshes = (shaders::Mesh*)scene.meshBuffer.value().deviceAddress;
 
         glfwMakeContextCurrent(window);
 
@@ -248,28 +295,69 @@ int main(void) {
             commandBuffer.reset();
             commandBuffer.begin({ vk::CommandBufferUsageFlags{} });
 
-            auto gbufferImageView = vk::ImageView{ gbuffer.imageView };
+            vk::Sampler sampler{ gbufferSampler.sampler };
+            vk::ImageView gbufferImageView{ gbuffer.imageView };
+            vk::ImageView tonemappedGbufferImageView{ tonemappedGbuffer.imageView };
             engine.raytrace(commandBuffer, gbufferImageView, swapchain.description.extent);
 
-            vk::ImageCopy imageCopy{
+            tonemapper.run(commandBuffer, swapchain.description.extent, { sampler, gbufferImageView, vk::ImageLayout::eGeneral }, { sampler, tonemappedGbufferImageView, vk::ImageLayout::eGeneral });
+            std::array<vk::MemoryBarrier2, 1> memoryBarriers{ {
+                vk::MemoryBarrier2{ vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderWrite, vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferRead },
+            } };
+            std::array<vk::ImageMemoryBarrier2, 1> imageBarrierBeforeSwapchainCopy{ {
+                {
+                    vk::PipelineStageFlagBits2::eTransfer,
+                    vk::AccessFlagBits2::eNone,
+                    vk::PipelineStageFlagBits2::eTransfer,
+                    vk::AccessFlagBits2::eTransferWrite,
+                    vk::ImageLayout::ePresentSrcKHR,
+                    vk::ImageLayout::eGeneral,
+                    vk::QueueFamilyIgnored,
+                    vk::QueueFamilyIgnored,
+                    swapchain.images[imageIndex],
+                    colorRange,
+                },
+            } };
+            commandBuffer.pipelineBarrier2({ {}, memoryBarriers, {}, imageBarrierBeforeSwapchainCopy });
+            vk::ImageCopy2 copyRegion{
                 { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
                 { 0, 0, 0 },
                 { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
                 { 0, 0, 0 },
                 { swapchain.description.extent.width, swapchain.description.extent.height, 1 },
             };
-            commandBuffer.copyImage(framebuffer, vk::ImageLayout::eGeneral, swapchain.images[imageIndex], vk::ImageLayout::ePresentSrcKHR, { imageCopy });
+            commandBuffer.copyImage2({ tonemappedGbuffer.image.image, vk::ImageLayout::eGeneral, swapchain.images[imageIndex], vk::ImageLayout::eGeneral, { copyRegion } });
+            std::array<vk::ImageMemoryBarrier2, 1> imageBarrierAfterSwapchainCopy{ {
+                {
+                    vk::PipelineStageFlagBits2::eTransfer,
+                    vk::AccessFlagBits2::eTransferWrite,
+                    vk::PipelineStageFlagBits2::eTransfer,
+                    vk::AccessFlagBits2::eNone,
+                    vk::ImageLayout::eGeneral,
+                    vk::ImageLayout::ePresentSrcKHR,
+                    vk::QueueFamilyIgnored,
+                    vk::QueueFamilyIgnored,
+                    swapchain.images[imageIndex],
+                    colorRange,
+                },
+            } };
+            commandBuffer.pipelineBarrier2({ {}, {}, {}, imageBarrierAfterSwapchainCopy });
 
             commandBuffer.end();
 
-            vk::PipelineStageFlags stageFlags{ vk::PipelineStageFlagBits::eRayTracingShaderKHR };
-            device.queues.graphics.submit({ { { acquireSemaphore }, { stageFlags }, { commandBuffer }, { submitSemaphore } } }, frameFence);
+            vk::SemaphoreSubmitInfo acquireSemaphoreSubmitInfo{ acquireSemaphore, 0, vk::PipelineStageFlagBits2::eColorAttachmentOutput };
+            vk::CommandBufferSubmitInfo commandBufferSubmitInfo{ commandBuffer };
+            vk::SemaphoreSubmitInfo signalSemaphoreSubmitInfo{ submitSemaphore, 0, vk::PipelineStageFlagBits2::eBottomOfPipe };
+
+            device.queues.graphics.submit2({ { {}, { acquireSemaphoreSubmitInfo }, { commandBufferSubmitInfo }, { signalSemaphoreSubmitInfo } } }, frameFence);
 
             auto swp = vk::SwapchainKHR{ swapchain.swapchain };
             device.queues.present.presentKHR({ { submitSemaphore }, { swp }, { imageIndex } });
 
             currentFrame = (currentFrame + 1) % inFlightFrameCount;
         }
+
+        device.device.waitIdle();
     }
 
     glfwDestroyWindow(window);

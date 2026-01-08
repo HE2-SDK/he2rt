@@ -8,13 +8,12 @@
 
 namespace he2rt {
 	class RaytracingEngine {
-		struct PushConstant {
-			float unk1{};
-			mat34 viewInverse{};
-			mat44 projInverse{};
-		};
-
 		static constexpr uint32_t groupCount{ 3 };
+
+		vk::StridedDeviceAddressRegionKHR raygenRegion{};
+		vk::StridedDeviceAddressRegionKHR missRegion{};
+		vk::StridedDeviceAddressRegionKHR hitRegion{};
+		vk::StridedDeviceAddressRegionKHR callableRegion{};
 
 		Device& device;
 		Scene& scene;
@@ -22,10 +21,6 @@ namespace he2rt {
 		vk::raii::PipelineLayout pipelineLayout;
 		vk::raii::Pipeline pipeline;
 		Buffer sbtBuffer;
-		vk::StridedDeviceAddressRegionKHR raygenRegion{};
-		vk::StridedDeviceAddressRegionKHR missRegion{};
-		vk::StridedDeviceAddressRegionKHR hitRegion{};
-		vk::StridedDeviceAddressRegionKHR callableRegion{};
 
 		vk::raii::DescriptorSetLayout createDescriptorSetLayout();
 		vk::raii::PipelineLayout createPipelineLayout();
@@ -33,7 +28,7 @@ namespace he2rt {
 		Buffer createSBTBuffer();
 
 	public:
-		PushConstant globalPushConstant{};
+		shaders::PushConstant globalPushConstant{};
 
 		RaytracingEngine(Device& device, Scene& scene);
 

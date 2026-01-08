@@ -20,6 +20,7 @@
 #include <ucsl-reflection/bound-reflection.h>
 #include <rip/binary/accessors/binary-stream.h>
 #include "mem_stream.h"
+#include "shader-types.h"
 
 namespace he2rt {
 	struct Texture {
@@ -44,16 +45,16 @@ namespace he2rt {
 
 	struct ModelInstance {
 		uint32_t modelId{};
-		mat34 transform{};
+		float3x4 transform{};
 	};
 
 	struct Light {
-		vec3 color{};
+		float3 color{};
 	};
 
 	struct LightInstance {
 		uint32_t lightId{};
-		mat34 transform{};
+		float3x4 transform{};
 	};
 
 	class Device;
@@ -67,6 +68,9 @@ namespace he2rt {
 		std::vector<AccelerationStructure> blases{};
 		std::vector<vk::AccelerationStructureInstanceKHR> tlasInstances{};
 		std::optional<AccelerationStructure> tlas{};
+
+		std::vector<shaders::Mesh> shaderMeshes{};
+		std::optional<Buffer> meshBuffer{};
 
 		Scene(Device& device);
 
@@ -95,6 +99,22 @@ namespace he2rt {
 
 			for (size_t i = 0; i < vertexBufSize; i++)
 				vertexBuf[i] = vertexData[i].as_primitive().as<unsigned char>();
+
+			for (size_t i = 0; i < vertexCount; i++) {
+				auto* pos = reinterpret_cast<float*>(&vertexBuf[i * vertexStride]);
+
+				pos[0] = std::bit_cast<float>(_byteswap_ulong(std::bit_cast<unsigned int>(pos[0])));
+				pos[1] = std::bit_cast<float>(_byteswap_ulong(std::bit_cast<unsigned int>(pos[1])));
+				pos[2] = std::bit_cast<float>(_byteswap_ulong(std::bit_cast<unsigned int>(pos[2])));
+
+				auto* nrm = reinterpret_cast<uint8_t*>(&vertexBuf[i * vertexStride + 0xC]);
+				auto nrmSwapped = _byteswap_ulong(*reinterpret_cast<uint32_t*>(nrm));
+
+				nrm[0] = static_cast<uint8_t>(nrmSwapped >> 2);
+				nrm[1] = static_cast<uint8_t>(nrmSwapped >> 12);
+				nrm[2] = static_cast<uint8_t>(nrmSwapped >> 22);
+				nrm[3] = static_cast<uint8_t>(nrmSwapped >> 24) | 0x3F;
+			}
 
 			std::cout << " ==== Loading model " << name << " ====" << std::endl;
 			std::cout << "  Index count: " << indexCount << std::endl;
@@ -143,6 +163,11 @@ namespace he2rt {
 			};
 
 			models.emplace_back(std::move(indexBuffer), std::move(vertexBuffer));
+			shaderMeshes.emplace_back(shaders::Mesh{
+				(uint16_t*)indexBuffer.deviceAddress,
+				(uint8_t*)vertexBuffer.deviceAddress,
+				shaders::VertexDataReflection{ static_cast<uint8_t>(vertexStride), 0, 12 },
+			});
 
 			blases.emplace_back(device.buildBLAS(geometry, { triangleCount }));
 			//auto maybeTextures = mesh.get_field<"textures">().as_pointer().get();
@@ -172,6 +197,7 @@ namespace he2rt {
 			addMeshes(meshGroup.get_field<"punchthroughMeshes">().as_pointer().get().value().as_carray());
 		}
 
+		void generateMeshBuffer();
 		void buildTLAS();
 	};
 }

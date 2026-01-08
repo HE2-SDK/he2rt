@@ -10,6 +10,26 @@ namespace he2rt {
         //, imageViews{ createImageViews() }
         , imageReadySemaphores{ createImageReadySemaphores() }
     {
+        device.runOneTimeCommandBuffer([&](vk::CommandBuffer& cmd) {
+            std::vector<vk::ImageMemoryBarrier2> imageBarriers{};
+
+            for (auto& image : images) {
+                imageBarriers.emplace_back(vk::ImageMemoryBarrier2{
+                    vk::PipelineStageFlagBits2::eNone,
+                    vk::AccessFlagBits2::eNone,
+                    vk::PipelineStageFlagBits2::eTransfer,
+                    vk::AccessFlagBits2::eTransferWrite,
+                    vk::ImageLayout::eUndefined,
+                    vk::ImageLayout::ePresentSrcKHR,
+                    vk::QueueFamilyIgnored,
+                    vk::QueueFamilyIgnored,
+                    image,
+                    { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+                });
+            }
+
+            cmd.pipelineBarrier2({ {}, {}, {}, imageBarriers });
+        });
 	}
 
     //std::vector<vk::raii::ImageView> Swapchain::createImageViews() {

@@ -79,6 +79,10 @@ namespace he2rt {
         return { std::move(image), imageCreateInfo };
     }
 
+    Sampler Device::createSampler(const vk::SamplerCreateInfo& samplerCreateInfo) {
+        return { device.createSampler(samplerCreateInfo), samplerCreateInfo };
+    }
+
     AccelerationStructure Device::createAS(vk::AccelerationStructureTypeKHR type, const vk::AccelerationStructureBuildSizesInfoKHR& buildSizes) {
         auto buffer = createBuffer(
             buildSizes.accelerationStructureSize,

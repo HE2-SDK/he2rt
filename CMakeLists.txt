@@ -28,7 +28,8 @@ set(DEVTOOLS_UPDATE_SERVER_PATH "" CACHE PATH "Path to update server")
 
 #add_subdirectory(shaders)
 set(SHADERS
-    shaders/raytracing.slang
+    src/raytracing.slang
+    src/post-processing/tonemapper/tonemapper.slang
 )
 
 foreach(source IN LISTS SHADERS)

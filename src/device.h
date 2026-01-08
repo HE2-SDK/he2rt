@@ -12,6 +12,7 @@
 #include "acceleration-structures.h"
 #include "buffer.h"
 #include "image.h"
+#include "sampler.h"
 
 namespace he2rt {
 	class Device {
@@ -35,10 +36,14 @@ namespace he2rt {
         Device(PhysicalDevice& physicalDevice, vk::raii::Device&& device);
 
         Swapchain createSwapchain(const vk::Extent2D& desiredExtent, vk::SurfaceKHR surface);
+        template<typename T> inline Buffer createBuffer(vk::BufferUsageFlags2 bufferUsage, vma::MemoryUsage memoryUsage = vma::MemoryUsage::eAuto, vma::AllocationCreateFlags allocationCreateFlags = {}, vk::MemoryPropertyFlags memoryPropertyRequiredFlags = {}) {
+            return createBuffer(sizeof(T), alignof(T), bufferUsage, memoryUsage, allocationCreateFlags, memoryPropertyRequiredFlags);
+        }
         Buffer createBuffer(vk::DeviceSize size, vk::DeviceSize alignment, vk::BufferUsageFlags2 bufferUsage, vma::MemoryUsage memoryUsage = vma::MemoryUsage::eAuto, vma::AllocationCreateFlags allocationCreateFlags = {}, vk::MemoryPropertyFlags memoryPropertyRequiredFlags = {});
         Buffer createBuffer(const vk::BufferCreateInfo& bufferCreateInfo, const vma::AllocationCreateInfo& allocationCreateInfo, vk::DeviceSize alignment);
         Image createImage(const vk::ImageCreateInfo& imageCreateInfo, vma::MemoryUsage memoryUsage = vma::MemoryUsage::eAuto, vma::AllocationCreateFlags allocationCreateFlags = {}, vk::MemoryPropertyFlags memoryPropertyRequiredFlags = {});
         Image createImage(const vk::ImageCreateInfo& imageCreateInfo, const vma::AllocationCreateInfo& allocationCreateInfo);
+        Sampler createSampler(const vk::SamplerCreateInfo& samplerCreateInfo);
         AccelerationStructure createAS(vk::AccelerationStructureTypeKHR type, const vk::AccelerationStructureBuildSizesInfoKHR& buildSizes);
         AccelerationStructure buildAS(vk::AccelerationStructureTypeKHR type, const vk::AccelerationStructureGeometryKHR& geometry, const vk::AccelerationStructureBuildRangeInfoKHR& rangeInfo);
         AccelerationStructure buildBLAS(const vk::AccelerationStructureGeometryKHR& geometry, const vk::AccelerationStructureBuildRangeInfoKHR& rangeInfo);
@@ -48,7 +53,7 @@ namespace he2rt {
         template<typename F>
         void runOneTimeCommandBuffer(F f) {
             auto cmdBuffers = device.allocateCommandBuffers({ tempCommands, vk::CommandBufferLevel::ePrimary, 1 });
-            auto& cmdBuffer = cmdBuffers[0];
+            vk::CommandBuffer cmdBuffer{ cmdBuffers[0] };
 
             cmdBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
             f(cmdBuffer);
@@ -56,7 +61,7 @@ namespace he2rt {
 
             auto fence = device.createFence({});
 
-            std::array<vk::CommandBufferSubmitInfo, 1> submitInfos{ vk::CommandBuffer{ cmdBuffer } };
+            std::array<vk::CommandBufferSubmitInfo, 1> submitInfos{ cmdBuffer };
 
             queues.graphics.submit2({ vk::SubmitInfo2{ {}, {}, submitInfos } }, fence);
             device.waitForFences({ fence }, VK_TRUE, UINT64_MAX);

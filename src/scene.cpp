@@ -49,11 +49,25 @@ namespace he2rt {
         }
 	}
 
+    void Scene::generateMeshBuffer() {
+        meshBuffer = device.createBuffer(
+            shaderMeshes.size() * sizeof(shaders::Mesh),
+            alignof(shaders::Mesh),
+            vk::BufferUsageFlagBits2::eStorageBuffer | vk::BufferUsageFlagBits2::eTransferDst
+        );
+
+        {
+            StagingArea staging{ device };
+            staging.addBuffer(meshBuffer.value(), std::span{ shaderMeshes });
+            device.runOneTimeCommandBuffer([&](auto& cmd) { staging.upload(cmd); });
+        }
+    }
+
     void Scene::buildTLAS() {
         auto buffer = device.createBuffer(
             tlasInstances.size() * sizeof(vk::AccelerationStructureInstanceKHR),
             16,
-            vk::BufferUsageFlagBits2::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits2::eShaderDeviceAddress | vk::BufferUsageFlagBits2::eTransferDst
+            vk::BufferUsageFlagBits2::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits2::eTransferDst
         );
 
         {

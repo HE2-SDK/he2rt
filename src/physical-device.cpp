@@ -48,6 +48,7 @@ namespace he2rt {
                 {},
                 extensions,
             },
+            features2.get<vk::PhysicalDeviceFeatures2>(),
             features2.get<vk::PhysicalDeviceVulkan11Features>(),
             features2.get<vk::PhysicalDeviceVulkan12Features>(),
             features2.get<vk::PhysicalDeviceVulkan13Features>(),
