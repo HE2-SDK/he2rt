@@ -58,19 +58,19 @@ namespace he2rt {
 
             auto extensions = physicalDevice.enumerateDeviceExtensionProperties();
 
-            if (!std::any_of(extensions.begin(), extensions.end(), [](auto& extension) { return !strcmp(extension.extensionName, vk::KHRSwapchainExtensionName); }))
-                continue;
+            std::vector<const char*> requiredExtensions{
+                vk::KHRSwapchainExtensionName,
+                vk::KHRRayTracingPipelineExtensionName,
+                vk::KHRSpirv14ExtensionName,
+                vk::KHRAccelerationStructureExtensionName,
+                vk::KHRBufferDeviceAddressExtensionName,
+                vk::NVDeviceDiagnosticCheckpointsExtensionName,
+                vk::NVDeviceDiagnosticsConfigExtensionName,
+            };
 
-            if (!std::any_of(extensions.begin(), extensions.end(), [](auto& extension) { return !strcmp(extension.extensionName, vk::KHRRayTracingPipelineExtensionName); }))
-                continue;
-
-            if (!std::any_of(extensions.begin(), extensions.end(), [](auto& extension) { return !strcmp(extension.extensionName, vk::KHRSpirv14ExtensionName); }))
-                continue;
-
-            if (!std::any_of(extensions.begin(), extensions.end(), [](auto& extension) { return !strcmp(extension.extensionName, vk::KHRAccelerationStructureExtensionName); }))
-                continue;
-
-            if (!std::any_of(extensions.begin(), extensions.end(), [](auto& extension) { return !strcmp(extension.extensionName, vk::KHRBufferDeviceAddressExtensionName); }))
+            if (std::any_of(requiredExtensions.begin(), requiredExtensions.end(), [&](auto* extensionName) {
+                return !std::any_of(extensions.begin(), extensions.end(), [extensionName](auto& extension) { return !strcmp(extension.extensionName, extensionName); });
+            }))
                 continue;
 
             auto features2 = physicalDevice.getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan12Features>();

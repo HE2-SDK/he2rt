@@ -14,6 +14,7 @@ namespace he2rt {
 		vk::StridedDeviceAddressRegionKHR missRegion{};
 		vk::StridedDeviceAddressRegionKHR hitRegion{};
 		vk::StridedDeviceAddressRegionKHR callableRegion{};
+		Eigen::Affine3f view{ Eigen::Affine3f::Identity() };
 
 		Device& device;
 		Scene& scene;

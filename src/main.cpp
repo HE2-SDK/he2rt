@@ -8,6 +8,7 @@
 #include "scene.h"
 #include "raytracing-engine.h"
 #include "post-processing/tonemapper/tonemapper.h"
+#include "gpu-crash-tracker.h"
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
@@ -176,6 +177,8 @@ int main(void) {
         if (!maybePhysicalDevice.has_value())
             throw std::runtime_error{ "can't find suitable device" };
 
+        GpuCrashTracker gpuCrashTracker{};
+
         auto physicalDevice = std::move(*maybePhysicalDevice);
         auto device = physicalDevice.createDevice();
 
@@ -195,7 +198,7 @@ int main(void) {
         });
 
         using VulkanCompatibleTransform = Eigen::Transform<float, 3, Eigen::AffineCompact, Eigen::RowMajor>;
-        VulkanCompatibleTransform tf{ Eigen::Translation3f{ 0.0f, 0.0f, -2.0f } };
+        VulkanCompatibleTransform tf{ Eigen::Translation3f{ 0.0f, -1.0f, -1.0f } };
 
         scene.tlasInstances.push_back(vk::AccelerationStructureInstanceKHR{
             *reinterpret_cast<vk::TransformMatrixKHR*>(tf.data()),

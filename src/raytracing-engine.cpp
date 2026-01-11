@@ -112,9 +112,9 @@ namespace he2rt {
     }
 
     void RaytracingEngine::raytrace(vk::CommandBuffer& cmd, vk::ImageView& outputImage, const vk::Extent2D& viewport) {
-        Eigen::Matrix4f view{ Eigen::Matrix4f::Identity() };
+        Eigen::Matrix4f inverseView{ Eigen::Matrix4f::Identity() };
 
-        globalPushConstant.viewInverse = view; // view.inverse().matrix();
+        globalPushConstant.viewInverse = inverseView; // view.inverse().matrix();
 
         cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, pipeline);
         //cmd.bindDescriptorSets2({ vk::ShaderStageFlagBits::eAll, pipelineLayout, 0, 1, WQEFVEWQFEW });

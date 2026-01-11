@@ -2,9 +2,9 @@
 
 namespace he2rt::shaders {
 	struct VertexDataReflection {
-		uint8_t stride;
-		uint8_t positionOffset;
-		uint8_t normalOffset;
+		uint32_t stride;
+		uint32_t positionOffset;
+		uint32_t normalOffset;
 	};
 
 	struct Mesh {

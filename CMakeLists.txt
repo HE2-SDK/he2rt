@@ -14,7 +14,12 @@ FetchContent_Declare(
     URL      https://github.com/YaaZ/VulkanMemoryAllocator-Hpp/releases/download/v3.3.0+1/VulkanMemoryAllocator-Hpp-3.3.0.tar.gz
     URL_HASH SHA256=8eab33e9d4a088470d2391667b48df693a6398bb76ccea20f3d4275ad85fab8a
 )
-FetchContent_MakeAvailable(eigen glfw vmahpp)
+FetchContent_Declare(
+    entt
+    GIT_REPOSITORY  https://github.com/skypjack/entt.git
+    GIT_TAG         v3.16.0
+)
+FetchContent_MakeAvailable(eigen glfw vmahpp entt)
 
 set(PROJECT_AUTHOR "angryzor")
 set(PROJECT_COPYRIGHT "Copyright (c) 2024 angryzor - Licensed under GPL3")
@@ -37,20 +42,29 @@ foreach(source IN LISTS SHADERS)
   add_custom_command(
     COMMAND
       "C:/VulkanSDK/1.4.335.0/Bin/slangc.exe"
+      -o ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv
+      ${CMAKE_CURRENT_SOURCE_DIR}/${source}
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${source}
+    COMMENT "Compiling ${FILENAME}"
+  )
+  add_custom_command(
+    COMMAND
+      "C:/VulkanSDK/1.4.335.0/Bin/slangc.exe"
       -source-embed-style u8
       -o ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv
       ${CMAKE_CURRENT_SOURCE_DIR}/${source}
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${source}
-    COMMENT "Compiling ${FILENAME}"
+    COMMENT "Compiling ${FILENAME} embedded version"
   )
-  list(APPEND SPV_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h)
+  list(APPEND SPV_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h)
 endforeach()
 
 add_executable(he2-rt ${SPV_SHADERS})
-target_include_directories(he2-rt PRIVATE "C:/VulkanSDK/1.4.335.0/Include" ${CMAKE_CURRENT_BINARY_DIR})
-target_link_directories(he2-rt PRIVATE "C:/VulkanSDK/1.4.335.0/Lib")
-target_link_libraries(he2-rt PRIVATE vulkan-1 glfw VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp Eigen3::Eigen rip-hl)
+target_include_directories(he2-rt PRIVATE "C:/VulkanSDK/1.4.335.0/Include" "C:/Program Files/NVIDIA Corporation/Nsight Graphics 2025.5.0/SDKs/NsightAftermathSDK/2025.5.0.251114/include" ${CMAKE_CURRENT_BINARY_DIR})
+target_link_directories(he2-rt PRIVATE "C:/VulkanSDK/1.4.335.0/Lib" "C:/Program Files/NVIDIA Corporation/Nsight Graphics 2025.5.0/SDKs/NsightAftermathSDK/2025.5.0.251114/lib/x64")
+target_link_libraries(he2-rt PRIVATE vulkan-1 GFSDK_Aftermath_Lib.x64 glfw EnTT::EnTT VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp Eigen3::Eigen rip-hl)
 target_compile_features(he2-rt PRIVATE cxx_std_20)
 target_compile_definitions(he2-rt PRIVATE
     VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1

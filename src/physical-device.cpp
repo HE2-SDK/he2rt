@@ -29,6 +29,8 @@ namespace he2rt {
             vk::KHRAccelerationStructureExtensionName,
             vk::KHRRayTracingPipelineExtensionName,
             vk::KHRDeferredHostOperationsExtensionName,
+            vk::NVDeviceDiagnosticCheckpointsExtensionName,
+            vk::NVDeviceDiagnosticsConfigExtensionName,
         };
 
         auto features2 = physicalDevice.getFeatures2<
@@ -55,6 +57,9 @@ namespace he2rt {
             features2.get<vk::PhysicalDeviceVulkan14Features>(),
             features2.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>(),
             features2.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>(),
+            vk::DeviceDiagnosticsConfigCreateInfoNV{
+                vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableAutomaticCheckpoints | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableResourceTracking | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableShaderDebugInfo | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableShaderErrorReporting
+            },
         };
 
         return { *this, { physicalDevice, createInfoChain.get<vk::DeviceCreateInfo>() }};

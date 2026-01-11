@@ -22,6 +22,8 @@
 #include "mem_stream.h"
 #include "shader-types.h"
 
+#include <entt/entt.hpp>
+
 namespace he2rt {
 	struct Texture {
 
@@ -60,6 +62,9 @@ namespace he2rt {
 	class Device;
 	struct Scene {
 		Device& device;
+
+		entt::registry registry{};
+
 		std::vector<Model> models{};
 		std::vector<ModelInstance> modelInstances{};
 		std::vector<Light> lights{};
@@ -162,6 +167,7 @@ namespace he2rt {
 				vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation | vk::GeometryFlagBitsKHR::eOpaque,
 			};
 
+			//const auto entity = registry.create();
 			models.emplace_back(std::move(indexBuffer), std::move(vertexBuffer));
 			shaderMeshes.emplace_back(shaders::Mesh{
 				(uint16_t*)indexBuffer.deviceAddress,

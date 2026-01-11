@@ -20,11 +20,11 @@ struct TriangleAttributes<T> {
 	T v2;
 };
 
-T getVertexAttribute<T>(Mesh mesh, uint16_t vertexIndex, uint8_t offset) {
+T getVertexAttribute<T>(Mesh mesh, uint16_t vertexIndex, uint offset) {
 	return *(T*)(mesh.vertexBuffer + vertexIndex * mesh.vertexDataReflection.stride + offset);
 }
 
-TriangleAttributes<T> getTriangleAttributes<T>(Mesh mesh, uint triangleIndex, uint8_t offset) {
+TriangleAttributes<T> getTriangleAttributes<T>(Mesh mesh, uint triangleIndex, uint offset) {
 	return {
 		getVertexAttribute<T>(mesh, mesh.indexBuffer[triangleIndex * 3 + 0], offset),
 		getVertexAttribute<T>(mesh, mesh.indexBuffer[triangleIndex * 3 + 1], offset),
@@ -32,14 +32,14 @@ TriangleAttributes<T> getTriangleAttributes<T>(Mesh mesh, uint triangleIndex, ui
 	};
 }
 
-T getInterpolatedAttribute<T : IFloat>(Mesh mesh, uint triangleIndex, uint8_t offset, float3 barycentrics) {
+T getInterpolatedAttribute<T : IFloat>(Mesh mesh, uint triangleIndex, uint offset, float3 barycentrics) {
 	TriangleAttributes<T> attrs = getTriangleAttributes<T>(mesh, triangleIndex, offset);
 
 	return T(barycentrics.x) * attrs.v0 + T(barycentrics.y) * attrs.v1 + T(barycentrics.z) * attrs.v2;
 }
 
-float3 getInterpolatedDec3nAttribute(Mesh mesh, uint triangleIndex, uint8_t offset, float3 barycentrics) {
-	TriangleAttributes<uint8_t4> attrs = getTriangleAttributes<uint8_t4>(mesh, triangleIndex, offset);
+float3 getInterpolatedDec3nAttribute(Mesh mesh, uint triangleIndex, uint offset, float3 barycentrics) {
+	TriangleAttributes<int8_t4> attrs = getTriangleAttributes<int8_t4>(mesh, triangleIndex, offset);
 	
 	return float3(barycentrics.x) * float3(attrs.v0.xyz) / 511.0 + float3(barycentrics.y) * float3(attrs.v1.xyz) / 511.0 + float3(barycentrics.z) * float3(attrs.v2.xyz) / 511.0;
 }
@@ -86,20 +86,23 @@ void rchitMain(inout HitPayload payload, in BuiltInTriangleIntersectionAttribute
 	float3 nrm = getInterpolatedDec3nAttribute(mesh, triangleId, mesh.vertexDataReflection.normalOffset, barycentrics);
 	
 	float3 worldPos = float3(mul(float4(pos, 1.0), ObjectToWorld4x3()));
-	float3 worldNormal = normalize(mul(WorldToObject4x3(), nrm).xyz);
-	
+	//float3 worldNormal = normalize(mul(WorldToObject4x3(), nrm).xyz);
+	float3 worldNormal = normalize(mul(float4(nrm, 0.0), ObjectToWorld4x3()).xyz);
+	float distance = length(normalize(worldPos));
+
 	float3 N = normalize(worldNormal); // Surface normal
 	float3 V = -WorldRayDirection(); // View direction (towards camera)
-	float3 L = normalize(float3(-1.0f, -1.0f, -1.0f)); // Light direction
+	float3 L = normalize(float3(1.0f, 1.0f, 0.0f)); // Light direction
 
 	// float3 color = pbrMetallicRoughness(albedo, metallic, roughness, N, V, L);
-	float lambertian = max(dot(L, N), 0.0);
+	float diffuse = max(dot(L, N), 0.0);
+	diffuse = diffuse * (1.0 / (1.0 + 0.25 * distance * distance));
 
-	payload.color = float3(lambertian);
+	payload.color = float3(diffuse);
 }
 
 [shader("miss")]
 void rmissMain(inout HitPayload payload) {
-	payload.color = float3(0.0, 0.0, 1.0);
+	payload.color = float3(0.0, 0.0, 0.0);
 	payload.depth = MISS_DEPTH;
 }
