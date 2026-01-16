@@ -1,4 +1,4 @@
-#include "shader-types.h"
+#include "shader-types.slang"
 
 #define MISS_DEPTH 1000
 
@@ -7,6 +7,7 @@ using namespace he2rt::shaders;
 [[vk::push_constant]] ConstantBuffer<PushConstant> pushConst;
 [[vk::binding(0)]] RaytracingAccelerationStructure tlas;
 [[vk::binding(1)]] RWTexture2D<float4> outImage;
+[[vk::binding(2)]] Sampler2D textures[];
 
 struct HitPayload {
 	float3 color;
@@ -83,7 +84,8 @@ void rchitMain(inout HitPayload payload, in BuiltInTriangleIntersectionAttribute
 	
 	float3 barycentrics = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
 	float3 pos = getInterpolatedAttribute<float3>(mesh, triangleId, mesh.vertexDataReflection.positionOffset, barycentrics);
-	float3 nrm = getInterpolatedDec3nAttribute(mesh, triangleId, mesh.vertexDataReflection.normalOffset, barycentrics);
+    float3 nrm = getInterpolatedDec3nAttribute(mesh, triangleId, mesh.vertexDataReflection.normalOffset, barycentrics);
+    half2 uv = getInterpolatedAttribute<half2>(mesh, triangleId, mesh.vertexDataReflection.uvOffset, barycentrics);
 	
 	float3 worldPos = float3(mul(float4(pos, 1.0), ObjectToWorld4x3()));
 	//float3 worldNormal = normalize(mul(WorldToObject4x3(), nrm).xyz);
@@ -92,13 +94,28 @@ void rchitMain(inout HitPayload payload, in BuiltInTriangleIntersectionAttribute
 
 	float3 N = normalize(worldNormal); // Surface normal
 	float3 V = -WorldRayDirection(); // View direction (towards camera)
-	float3 L = normalize(float3(1.0f, 1.0f, 0.0f)); // Light direction
+	float3 L = normalize(float3(1.0f, 1.0f, 1.0f)); // Light direction
 
-	// float3 color = pbrMetallicRoughness(albedo, metallic, roughness, N, V, L);
-	float diffuse = max(dot(L, N), 0.0);
-	diffuse = diffuse * (1.0 / (1.0 + 0.25 * distance * distance));
+    uint materialId = mesh.materialId;
 
-	payload.color = float3(diffuse);
+    Material material = pushConst.materials[materialId];
+
+    MaterialShaderPayload materialShaderPayload;
+    materialShaderPayload.materialId = materialId;
+    materialShaderPayload.weight = 1.0f;
+    materialShaderPayload.uv = float2(uv);
+    materialShaderPayload.position = worldPos;
+    materialShaderPayload.normal = N;
+    materialShaderPayload.lightDirection = L;
+    materialShaderPayload.viewDirection = V;
+
+    CallShader<MaterialShaderPayload>(material.shaderId, materialShaderPayload);
+
+    // // float3 color = pbrMetallicRoughness(albedo, metallic, roughness, N, V, L);
+    // float diffuse = max(dot(L, N), 0.0);
+    // diffuse = diffuse * (1.0 / (1.0 + 0.25 * distance * distance));
+    //
+    payload.color = materialShaderPayload.color;
 }
 
 [shader("miss")]

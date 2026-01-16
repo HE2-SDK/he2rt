@@ -19,7 +19,12 @@ FetchContent_Declare(
     GIT_REPOSITORY  https://github.com/skypjack/entt.git
     GIT_TAG         v3.16.0
 )
-FetchContent_MakeAvailable(eigen glfw vmahpp entt)
+FetchContent_Declare(
+    dds_image
+    GIT_REPOSITORY  https://github.com/spnda/dds_image.git
+    GIT_TAG         84a7bd47293a87214d454992deb8fdf3cba91c48
+)
+FetchContent_MakeAvailable(eigen glfw vmahpp entt dds_image)
 
 set(PROJECT_AUTHOR "angryzor")
 set(PROJECT_COPYRIGHT "Copyright (c) 2024 angryzor - Licensed under GPL3")
@@ -34,11 +39,13 @@ set(DEVTOOLS_UPDATE_SERVER_PATH "" CACHE PATH "Path to update server")
 #add_subdirectory(shaders)
 set(SHADERS
     src/raytracing.slang
+    src/common_dpn.slang
     src/post-processing/tonemapper/tonemapper.slang
 )
 
 foreach(source IN LISTS SHADERS)
   get_filename_component(FILENAME ${source} NAME)
+  get_filename_component(BASENAME ${source} NAME_WE)
   add_custom_command(
     COMMAND
       "C:/VulkanSDK/1.4.335.0/Bin/slangc.exe"
@@ -51,7 +58,8 @@ foreach(source IN LISTS SHADERS)
   add_custom_command(
     COMMAND
       "C:/VulkanSDK/1.4.335.0/Bin/slangc.exe"
-      -source-embed-style u8
+      -source-embed-style u32
+      -source-embed-name ${BASENAME}_shader
       -o ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv
       ${CMAKE_CURRENT_SOURCE_DIR}/${source}
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h
@@ -64,7 +72,7 @@ endforeach()
 add_executable(he2-rt ${SPV_SHADERS})
 target_include_directories(he2-rt PRIVATE "C:/VulkanSDK/1.4.335.0/Include" "C:/Program Files/NVIDIA Corporation/Nsight Graphics 2025.5.0/SDKs/NsightAftermathSDK/2025.5.0.251114/include" ${CMAKE_CURRENT_BINARY_DIR})
 target_link_directories(he2-rt PRIVATE "C:/VulkanSDK/1.4.335.0/Lib" "C:/Program Files/NVIDIA Corporation/Nsight Graphics 2025.5.0/SDKs/NsightAftermathSDK/2025.5.0.251114/lib/x64")
-target_link_libraries(he2-rt PRIVATE vulkan-1 GFSDK_Aftermath_Lib.x64 glfw EnTT::EnTT VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp Eigen3::Eigen rip-hl)
+target_link_libraries(he2-rt PRIVATE vulkan-1 GFSDK_Aftermath_Lib.x64 glfw EnTT::EnTT VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp Eigen3::Eigen rip-hl dds_image)
 target_compile_features(he2-rt PRIVATE cxx_std_20)
 target_compile_definitions(he2-rt PRIVATE
     VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1

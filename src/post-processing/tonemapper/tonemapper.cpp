@@ -102,21 +102,21 @@ namespace he2rt::shaders::tonemapper {
 	}
 
 	vk::raii::Pipeline Tonemapper::createTonemapPipeline(Device& device) {
-		vk::ShaderModuleCreateInfo shaderCreateInfo{ {}, data_sizeInBytes, (uint32_t*)data };
+		vk::ShaderModuleCreateInfo shaderCreateInfo{ {}, tonemapper_shader_sizeInBytes, (uint32_t*)tonemapper_shader };
 		vk::StructureChain<vk::PipelineShaderStageCreateInfo, vk::ShaderModuleCreateInfo> tonemapPipeline{ { {}, vk::ShaderStageFlagBits::eCompute, {}, "Tonemap" }, shaderCreateInfo };
 
 		return device.device.createComputePipeline(nullptr, { {}, tonemapPipeline.get<vk::PipelineShaderStageCreateInfo>(), pipelineLayout });
 	}
 
 	vk::raii::Pipeline Tonemapper::createHistogramPipeline(Device& device) {
-		vk::ShaderModuleCreateInfo shaderCreateInfo{ {}, data_sizeInBytes, (uint32_t*)data };
+		vk::ShaderModuleCreateInfo shaderCreateInfo{ {}, tonemapper_shader_sizeInBytes, (uint32_t*)tonemapper_shader };
 		vk::StructureChain<vk::PipelineShaderStageCreateInfo, vk::ShaderModuleCreateInfo> histogramPipeline{ { {}, vk::ShaderStageFlagBits::eCompute, {}, "Histogram" }, shaderCreateInfo };
 
 		return device.device.createComputePipeline(nullptr, { {}, histogramPipeline.get<vk::PipelineShaderStageCreateInfo>(), pipelineLayout });
 	}
 
 	vk::raii::Pipeline Tonemapper::createAutoExposurePipeline(Device& device) {
-		vk::ShaderModuleCreateInfo shaderCreateInfo{ {}, data_sizeInBytes, (uint32_t*)data };
+		vk::ShaderModuleCreateInfo shaderCreateInfo{ {}, tonemapper_shader_sizeInBytes, (uint32_t*)tonemapper_shader };
 		vk::StructureChain<vk::PipelineShaderStageCreateInfo, vk::ShaderModuleCreateInfo> autoExposurePipeline{ { {}, vk::ShaderStageFlagBits::eCompute, {}, "AutoExposure" }, shaderCreateInfo };
 
 		return device.device.createComputePipeline(nullptr, { {}, autoExposurePipeline.get<vk::PipelineShaderStageCreateInfo>(), pipelineLayout });

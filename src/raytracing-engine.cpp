@@ -14,9 +14,10 @@ namespace he2rt {
     }
 
     vk::raii::DescriptorSetLayout RaytracingEngine::createDescriptorSetLayout() {
-        std::array<vk::DescriptorSetLayoutBinding, 2> bindings{ {
+        std::array<vk::DescriptorSetLayoutBinding, 3> bindings{ {
             { 0u, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eAll },
             { 1u, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eAll },
+            { 2u, vk::DescriptorType::eCombinedImageSampler, (uint32_t)scene.textures.size(), vk::ShaderStageFlagBits::eAll },
         } };
 
         return device.device.createDescriptorSetLayout({ vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptor, bindings });
@@ -35,47 +36,55 @@ namespace he2rt {
     }
 
     vk::raii::Pipeline RaytracingEngine::createPipeline() {
-        vk::ShaderModuleCreateInfo shader{ {}, data_sizeInBytes, (uint32_t*)data };
+        vk::ShaderModuleCreateInfo shader{ {}, raytracing_shader_sizeInBytes, raytracing_shader };
         vk::StructureChain<vk::PipelineShaderStageCreateInfo, vk::ShaderModuleCreateInfo> rgenShader{ { {}, vk::ShaderStageFlagBits::eRaygenKHR, {}, "rgenMain" }, shader };
         vk::StructureChain<vk::PipelineShaderStageCreateInfo, vk::ShaderModuleCreateInfo> rmissShader{ { {}, vk::ShaderStageFlagBits::eMissKHR, {}, "rmissMain" }, shader };
         vk::StructureChain<vk::PipelineShaderStageCreateInfo, vk::ShaderModuleCreateInfo> rhitShader{ { {}, vk::ShaderStageFlagBits::eClosestHitKHR, {}, "rchitMain" }, shader };
 
-        std::array<vk::PipelineShaderStageCreateInfo, 3> stages{ {
+        std::vector<vk::PipelineShaderStageCreateInfo> stages{ {
             rgenShader.get<vk::PipelineShaderStageCreateInfo>(),
             rmissShader.get<vk::PipelineShaderStageCreateInfo>(),
             rhitShader.get<vk::PipelineShaderStageCreateInfo>(),
         } };
 
-        std::array<vk::RayTracingShaderGroupCreateInfoKHR, 3> groups{ {
+        std::vector<vk::RayTracingShaderGroupCreateInfoKHR> groups{ {
             { vk::RayTracingShaderGroupTypeKHR::eGeneral, 0u },
             { vk::RayTracingShaderGroupTypeKHR::eGeneral, 1u },
             { vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup, vk::ShaderUnusedKHR, 2u },
         } };
 
-        return device.device.createRayTracingPipelineKHR(nullptr, nullptr, { {}, stages, groups, 3u, {}, {}, {}, pipelineLayout });
+        std::vector<vk::StructureChain<vk::PipelineShaderStageCreateInfo, vk::ShaderModuleCreateInfo>> callableShaderCreateInfos{};
+        callableShaderCreateInfos.reserve(scene.shaders.size());
+
+        for (auto& shaderDef : scene.shaders) {
+            callableShaderCreateInfos.emplace_back(vk::PipelineShaderStageCreateInfo{ {}, vk::ShaderStageFlagBits::eCallableKHR, {}, "main" }, vk::ShaderModuleCreateInfo{ {}, shaderDef.size, shaderDef.code });
+        }
+
+        for (auto& shaderStageCreateInfo : callableShaderCreateInfos) {
+            stages.push_back(shaderStageCreateInfo.get<vk::PipelineShaderStageCreateInfo>());
+            groups.push_back({ vk::RayTracingShaderGroupTypeKHR::eGeneral, (uint32_t)groups.size() });
+        }
+
+        return device.device.createRayTracingPipelineKHR(nullptr, nullptr, { {}, stages, groups, 3, {}, {}, {}, pipelineLayout });
     }
 
     Buffer RaytracingEngine::createSBTBuffer() {
+        auto callableShaderCount = scene.shaders.size();
+        auto groupCount = 3 + callableShaderCount;
         auto& rtpProps = device.physicalDevice.rayTracingPipelineProperties;
         auto sbtData = pipeline.getRayTracingShaderGroupHandlesKHR<uint8_t>(0, groupCount, rtpProps.shaderGroupHandleSize * groupCount);
 
         uint32_t currentOffset{};
 
-        std::array<uint32_t, groupCount> offsets{};
-        std::array<vk::StridedDeviceAddressRegionKHR, groupCount> regions{};
+        std::array<size_t, 4> sizes{ { 1, 1, 1, callableShaderCount } };
+        std::array<uint32_t, 4> offsets{};
+        std::array<vk::StridedDeviceAddressRegionKHR, 4> regions{};
 
-        for (size_t i = 0; i < groupCount; i++) {
+        uint32_t alignedHandleSize = util::align(rtpProps.shaderGroupHandleSize, rtpProps.shaderGroupHandleAlignment);
+
+        for (size_t i = 0; i < 4; i++) {
             offsets[i] = currentOffset;
-            currentOffset = util::align(util::align(currentOffset + rtpProps.shaderGroupHandleSize, rtpProps.shaderGroupHandleAlignment), rtpProps.shaderGroupBaseAlignment);
-        }
-        
-        std::cout << "Handle size: " << std::hex << rtpProps.shaderGroupHandleSize << std::dec << std::endl;
-        std::cout << "Handle alignment: " << std::hex << rtpProps.shaderGroupHandleAlignment << std::dec << std::endl;
-        std::cout << "Base alignment: " << std::hex << rtpProps.shaderGroupBaseAlignment << std::dec << std::endl;
-        std::cout << "Buffer size: " << std::hex << currentOffset << std::dec << std::endl;
-
-        for (uint32_t offset : offsets) {
-            std::cout << "Offset: " << std::hex << offset << std::dec << std::endl;
+            currentOffset = util::align(currentOffset + sizes[i] * alignedHandleSize, rtpProps.shaderGroupBaseAlignment);
         }
 
         auto buffer = device.createBuffer(
@@ -86,22 +95,28 @@ namespace he2rt {
             vma::AllocationCreateFlagBits::eMapped | vma::AllocationCreateFlagBits::eHostAccessRandom
         );
 
-        uint32_t handleSize = util::align(rtpProps.shaderGroupHandleSize, rtpProps.shaderGroupHandleAlignment);
         uint8_t* sbtBuf = (uint8_t*)buffer.hostAddress;
 
-        for (size_t i = 0; i < groupCount; i++) {
-            memcpy(sbtBuf + offsets[i], sbtData.data() + i * rtpProps.shaderGroupHandleSize, rtpProps.shaderGroupHandleSize);
-            regions[i].deviceAddress = buffer.deviceAddress + offsets[i];
-            regions[i].stride = handleSize;
-            regions[i].size = handleSize;
+        size_t startHandle{};
+        for (size_t i = 0; i < 4; i++) {
+            auto offset = offsets[i];
+            auto size = sizes[i];
+
+            for (size_t j = 0; j < size; j++) {
+                memcpy(sbtBuf + offset + alignedHandleSize * j, sbtData.data() + (startHandle + j) * rtpProps.shaderGroupHandleSize, rtpProps.shaderGroupHandleSize);
+            }
+
+            regions[i].deviceAddress = buffer.deviceAddress + offset;
+            regions[i].stride = alignedHandleSize;
+            regions[i].size = alignedHandleSize * size;
+
+            startHandle += size;
         }
 
         raygenRegion = regions[0];
         missRegion = regions[1];
         hitRegion = regions[2];
-        callableRegion.deviceAddress = 0;
-        callableRegion.stride = 0;
-        callableRegion.size = 0;
+        callableRegion = regions[3];
 
         std::cout << std::hex << "RAYGEN region: " << raygenRegion.deviceAddress << ", " << raygenRegion.stride << ", " << raygenRegion.size << std::dec << std::endl;
         std::cout << std::hex << "MISS region: " << missRegion.deviceAddress << ", " << missRegion.stride << ", " << missRegion.size << std::dec << std::endl;
@@ -119,16 +134,24 @@ namespace he2rt {
         cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, pipeline);
         //cmd.bindDescriptorSets2({ vk::ShaderStageFlagBits::eAll, pipelineLayout, 0, 1, WQEFVEWQFEW });
 
+        std::vector<vk::WriteDescriptorSet> writes{};
+
         std::array<vk::AccelerationStructureKHR, 1> tlases{ { scene.tlas.value().structure } };
         vk::StructureChain<vk::WriteDescriptorSet, vk::WriteDescriptorSetAccelerationStructureKHR> tlasWrite{
             { {}, 0, 0, 1, vk::DescriptorType::eAccelerationStructureKHR },
             { tlases },
         };
+        writes.emplace_back(tlasWrite.get<vk::WriteDescriptorSet>());
 
         vk::DescriptorImageInfo outImgInfo{ {}, outputImage, vk::ImageLayout::eGeneral };
         vk::WriteDescriptorSet outImgWrite{ {}, 1, 0, 1, vk::DescriptorType::eStorageImage, &outImgInfo };
+        writes.emplace_back(outImgWrite);
 
-        std::array<const vk::WriteDescriptorSet, 2> writes{ { tlasWrite.get<vk::WriteDescriptorSet>(), outImgWrite } };
+        for (uint32_t i = 0; i < scene.textures.size(); i++) {
+            vk::WriteDescriptorSet textureImgWrite{ {}, 2, i, 1, vk::DescriptorType::eCombinedImageSampler, &scene.textures[i].descriptor };
+            writes.emplace_back(textureImgWrite);
+        }
+
         cmd.pushDescriptorSet(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, writes);
 
         cmd.pushConstants<shaders::PushConstant>(pipelineLayout, vk::ShaderStageFlagBits::eAll, 0, { globalPushConstant });

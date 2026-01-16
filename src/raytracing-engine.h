@@ -8,8 +8,6 @@
 
 namespace he2rt {
 	class RaytracingEngine {
-		static constexpr uint32_t groupCount{ 3 };
-
 		vk::StridedDeviceAddressRegionKHR raygenRegion{};
 		vk::StridedDeviceAddressRegionKHR missRegion{};
 		vk::StridedDeviceAddressRegionKHR hitRegion{};

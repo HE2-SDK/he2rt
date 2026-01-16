@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <unordered_map>
 #include <optional>
 #include <vk_mem_alloc.hpp>
 #include <vk_mem_alloc_raii.hpp>
@@ -9,6 +10,7 @@
 #include "staging-area.h"
 #include "device.h"
 #include "buffer.h"
+#include "image.h"
 
 #include <rip/binary/containers/needle-archive/v1.h>
 #include <rip/binary/containers/mirage/v2.h>
@@ -16,6 +18,7 @@
 #include <rip/binary/stream.h>
 #include <ucsl-reflection/game-interfaces/standalone/game-interface.h>
 #include <ucsl-reflection/providers/simplerfl.h>
+#include <ucsl-reflection/reflections/resources/material/v3.h>
 #include <ucsl-reflection/reflections/resources/model/v5.h>
 #include <ucsl-reflection/bound-reflection.h>
 #include <rip/binary/accessors/binary-stream.h>
@@ -25,28 +28,20 @@
 #include <entt/entt.hpp>
 
 namespace he2rt {
-	struct Texture {
-
-	};
-
-	struct Material {
-
-	};
-
-	struct Model {
+	struct Mesh {
 		Buffer indexBuffer;
 		Buffer vertexBuffer;
 
-		Model(Buffer&& indexBuffer, Buffer&& vertexBuffer);
-		Model(const Model& other) = delete;
-		Model(Model&& other);
+		Mesh(Buffer&& indexBuffer, Buffer&& vertexBuffer);
+		Mesh(const Mesh& other) = delete;
+		Mesh(Mesh&& other);
 
-		Model& operator=(const Model& other) = delete;
-		Model& operator=(Model&& other);
+		Mesh& operator=(const Mesh& other) = delete;
+		Mesh& operator=(Mesh&& other);
 	};
 
-	struct ModelInstance {
-		uint32_t modelId{};
+	struct MeshInstance {
+		uint32_t meshId{};
 		float3x4 transform{};
 	};
 
@@ -59,14 +54,61 @@ namespace he2rt {
 		float3x4 transform{};
 	};
 
+	struct Texture {
+		Image image;
+		vk::raii::ImageView imageView;
+		Sampler sampler;
+		vk::DescriptorImageInfo descriptor;
+	};
+
+	struct Shader {
+		const uint32_t* code;
+		size_t size;
+		//vk::raii::ShaderModule shaderModule;
+	};
+
+	struct MaterialShader {
+		struct Reflection {
+			struct InputLayout {
+				size_t size{};
+				std::unordered_map<std::string, uint32_t> offsets{};
+			};
+
+			InputLayout inputLayout{};
+		};
+
+		uint32_t shaderId{};
+		Reflection reflection{};
+	};
+
+	struct Material {
+		Buffer shaderParamBuffer;
+	};
+
 	class Device;
 	struct Scene {
 		Device& device;
 
 		entt::registry registry{};
 
-		std::vector<Model> models{};
-		std::vector<ModelInstance> modelInstances{};
+		std::vector<Texture> textures{};
+		std::unordered_map<std::string, uint32_t> textureIdsByName{};
+
+		std::vector<Shader> shaders{};
+
+		std::unordered_map<std::string, MaterialShader> materialShaders{};
+
+		std::vector<Material> materials{};
+		std::unordered_map<std::string, uint32_t> materialIdsByName{};
+		std::vector<shaders::Material> shaderMaterials{};
+		std::optional<Buffer> materialBuffer{};
+
+		std::vector<Mesh> meshes{};
+		std::vector<shaders::Mesh> shaderMeshes{};
+		std::optional<Buffer> meshBuffer{};
+
+		std::vector<MeshInstance> meshInstances{};
+
 		std::vector<Light> lights{};
 		std::vector<LightInstance> lightInstances{};
 
@@ -74,8 +116,6 @@ namespace he2rt {
 		std::vector<vk::AccelerationStructureInstanceKHR> tlasInstances{};
 		std::optional<AccelerationStructure> tlas{};
 
-		std::vector<shaders::Mesh> shaderMeshes{};
-		std::optional<Buffer> meshBuffer{};
 
 		Scene(Device& device);
 
@@ -119,15 +159,29 @@ namespace he2rt {
 				nrm[1] = static_cast<uint8_t>(nrmSwapped >> 12);
 				nrm[2] = static_cast<uint8_t>(nrmSwapped >> 22);
 				nrm[3] = static_cast<uint8_t>(nrmSwapped >> 24) | 0x3F;
+
+				auto* uv = reinterpret_cast<uint16_t*>(&vertexBuf[i * vertexStride + 0x18]);
+
+				uv[0] = _byteswap_ushort(uv[0]);
+				uv[1] = _byteswap_ushort(uv[1]);
 			}
 
-			std::cout << " ==== Loading model " << name << " ====" << std::endl;
+			std::cout << " ==== Loading mesh " << name << " ====" << std::endl;
 			std::cout << "  Index count: " << indexCount << std::endl;
 			std::cout << "  Vertex count: " << vertexCount << std::endl;
 			std::cout << "  Vertex stride: " << vertexStride << std::endl;
 			std::cout << "  Vertex buffer size: " << vertexBufSize << std::endl;
 			//std::cout << "  Bone indices: " << mesh.get_field<"boneIndexCount">().as_primitive().as<unsigned int>() << std::endl;
 			//std::cout << "  Textures: " << mesh.get_field<"textureCount">().as_primitive().as<unsigned int>() << std::endl;
+
+			auto materialIdIt = materialIdsByName.find(name);
+
+			if (materialIdIt == materialIdsByName.end())
+				throw std::runtime_error{ std::string{ "Unknown material " } + name };
+
+			auto materialId = materialIdIt->second;
+
+			std::cout << "  Material ID: " << materialId << std::endl;
 
 			auto indexBuffer = device.createBuffer(
 				util::align(indexBufSize, 16),
@@ -167,32 +221,35 @@ namespace he2rt {
 				vk::GeometryFlagBitsKHR::eNoDuplicateAnyHitInvocation | vk::GeometryFlagBitsKHR::eOpaque,
 			};
 
-			//const auto entity = registry.create();
-			models.emplace_back(std::move(indexBuffer), std::move(vertexBuffer));
-			shaderMeshes.emplace_back(shaders::Mesh{
+			meshes.emplace_back(std::move(indexBuffer), std::move(vertexBuffer));
+			shaderMeshes.emplace_back(
 				(uint16_t*)indexBuffer.deviceAddress,
 				(uint8_t*)vertexBuffer.deviceAddress,
-				shaders::VertexDataReflection{ static_cast<uint8_t>(vertexStride), 0, 12 },
-			});
+				materialId,
+				shaders::VertexDataReflection{ static_cast<uint8_t>(vertexStride), 0, 0xC, 0x18 }
+			);
 
 			blases.emplace_back(device.buildBLAS(geometry, { triangleCount }));
-			//auto maybeTextures = mesh.get_field<"textures">().as_pointer().get();
+			auto maybeTextures = mesh.get_field<"textures">().as_pointer().get();
 
-			//if (maybeTextures.has_value()) {
-			//	auto textures = maybeTextures.value().as_carray();
+			if (maybeTextures.has_value()) {
+				auto textures = maybeTextures.value().as_carray();
 
-			//	for (size_t k = 0; k < textures.get_length(); k++) {
-			//		auto texture = textures[k].as_pointer().get().value().as_structure();
+				for (size_t k = 0; k < textures.get_length(); k++) {
+					auto texture = textures[k].as_pointer().get().value().as_structure();
 
-			//		std::string textureName = texture.get_field<"name">().as_primitive().as<const char*>();
+					std::string textureName = texture.get_field<"name">().as_primitive().as<const char*>();
 
-			//		std::cout << "      " << textureName << " - " << static_cast<unsigned int>(texture.get_field<"index">().as_primitive().as<unsigned char>()) << std::endl;
-			//	}
-			//}
-			std::cout << " ==== Finished loading model " << name << " ====" << std::endl;
+					std::cout << "      " << textureName << " - " << static_cast<unsigned int>(texture.get_field<"index">().as_primitive().as<unsigned char>()) << std::endl;
+				}
+			}
+			std::cout << " ==== Finished loading mesh " << name << " ====" << std::endl;
 		}
 
 		void addMeshes(auto meshes) {
+			//addMesh(meshes[0].as_pointer().get().value().as_structure());
+			//addMesh(meshes[1].as_pointer().get().value().as_structure());
+			//addMesh(meshes[2].as_pointer().get().value().as_structure());
 			for (size_t i = 0; i < meshes.get_length(); i++)
 				addMesh(meshes[i].as_pointer().get().value().as_structure());
 		}
@@ -203,6 +260,13 @@ namespace he2rt {
 			addMeshes(meshGroup.get_field<"punchthroughMeshes">().as_pointer().get().value().as_carray());
 		}
 
+		void addTexture(const std::string& name, const std::string& filename);
+		void addMaterial(const std::string& name, std::istream& stream);
+		void addMaterial(const std::string& name, const std::string& filename);
+		void addMaterialShader(const std::string& name, const uint32_t* data, size_t size, const MaterialShader::Reflection& reflection);
+		void addMaterialShader(const std::string& name, std::istream& stream);
+
+		void generateMaterialBuffer();
 		void generateMeshBuffer();
 		void buildTLAS();
 	};
