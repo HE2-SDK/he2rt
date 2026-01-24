@@ -6,26 +6,65 @@ namespace he2rt {
     RaytracingEngine::RaytracingEngine(Device& device, Scene& scene)
         : device{ device }
         , scene{ scene }
-        , descriptorSetLayout{ createDescriptorSetLayout() }
+        , staticDescriptorSetLayout{ createStaticDescriptorSetLayout() }
+        , pushDescriptorSetLayout{ createPushDescriptorSetLayout() }
+        , staticDescriptorSetPool{ createStaticDescriptorSetPool() }
+        , staticDescriptorSet{ createStaticDescriptorSet() }
         , pipelineLayout{ createPipelineLayout() }
         , pipeline{ createPipeline() }
         , sbtBuffer{ createSBTBuffer() }
     {
     }
 
-    vk::raii::DescriptorSetLayout RaytracingEngine::createDescriptorSetLayout() {
-        std::array<vk::DescriptorSetLayoutBinding, 3> bindings{ {
+    vk::raii::DescriptorSetLayout RaytracingEngine::createStaticDescriptorSetLayout() {
+        std::array<vk::DescriptorSetLayoutBinding, 1> bindings{ {
+            { 0u, vk::DescriptorType::eCombinedImageSampler, (uint32_t)scene.textures.size(), vk::ShaderStageFlagBits::eAll },
+        } };
+
+        return device.device.createDescriptorSetLayout({ {}, bindings });
+    }
+
+    vk::raii::DescriptorSetLayout RaytracingEngine::createPushDescriptorSetLayout() {
+        std::array<vk::DescriptorSetLayoutBinding, 2> bindings{ {
             { 0u, vk::DescriptorType::eAccelerationStructureKHR, 1, vk::ShaderStageFlagBits::eAll },
             { 1u, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eAll },
-            { 2u, vk::DescriptorType::eCombinedImageSampler, (uint32_t)scene.textures.size(), vk::ShaderStageFlagBits::eAll },
         } };
 
         return device.device.createDescriptorSetLayout({ vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptor, bindings });
     }
 
+    vk::raii::DescriptorPool RaytracingEngine::createStaticDescriptorSetPool() {
+        std::array<vk::DescriptorPoolSize, 1> poolSizes{ {
+            { vk::DescriptorType::eCombinedImageSampler, (uint32_t)scene.textures.size() },
+        } };
+
+        return device.device.createDescriptorPool({ {}, (uint32_t)scene.textures.size(), poolSizes });
+    }
+
+    vk::raii::DescriptorSet RaytracingEngine::createStaticDescriptorSet() {
+        std::array<vk::DescriptorSetLayout, 1> layouts{ { staticDescriptorSetLayout } };
+
+        auto sets = device.device.allocateDescriptorSets({ staticDescriptorSetPool, layouts });
+
+        std::vector<vk::DescriptorImageInfo> imageInfos{};
+
+        for (uint32_t i = 0; i < scene.textures.size(); i++) {
+            imageInfos.emplace_back(scene.textures[i].descriptor);
+        }
+
+        std::array<vk::WriteDescriptorSet, 1> writes{ {
+            { sets[0], 0, 0, vk::DescriptorType::eCombinedImageSampler, imageInfos },
+        } };
+
+        device.device.updateDescriptorSets(writes, {});
+
+        return std::move(sets[0]);
+    }
+
     vk::raii::PipelineLayout RaytracingEngine::createPipelineLayout() {
-        std::array<vk::DescriptorSetLayout, 1> descriptorSetLayouts{ {
-            descriptorSetLayout,
+        std::array<vk::DescriptorSetLayout, 2> descriptorSetLayouts{ {
+            staticDescriptorSetLayout,
+            pushDescriptorSetLayout,
         } };
 
         std::array<vk::PushConstantRange, 1> pushConstantRanges{ {
@@ -39,18 +78,21 @@ namespace he2rt {
         vk::ShaderModuleCreateInfo shader{ {}, raytracing_shader_sizeInBytes, raytracing_shader };
         vk::StructureChain<vk::PipelineShaderStageCreateInfo, vk::ShaderModuleCreateInfo> rgenShader{ { {}, vk::ShaderStageFlagBits::eRaygenKHR, {}, "rgenMain" }, shader };
         vk::StructureChain<vk::PipelineShaderStageCreateInfo, vk::ShaderModuleCreateInfo> rmissShader{ { {}, vk::ShaderStageFlagBits::eMissKHR, {}, "rmissMain" }, shader };
+        vk::StructureChain<vk::PipelineShaderStageCreateInfo, vk::ShaderModuleCreateInfo> rmissShadowShader{ { {}, vk::ShaderStageFlagBits::eMissKHR, {}, "rmissShadowMain" }, shader };
         vk::StructureChain<vk::PipelineShaderStageCreateInfo, vk::ShaderModuleCreateInfo> rhitShader{ { {}, vk::ShaderStageFlagBits::eClosestHitKHR, {}, "rchitMain" }, shader };
 
         std::vector<vk::PipelineShaderStageCreateInfo> stages{ {
             rgenShader.get<vk::PipelineShaderStageCreateInfo>(),
             rmissShader.get<vk::PipelineShaderStageCreateInfo>(),
+            rmissShadowShader.get<vk::PipelineShaderStageCreateInfo>(),
             rhitShader.get<vk::PipelineShaderStageCreateInfo>(),
         } };
 
         std::vector<vk::RayTracingShaderGroupCreateInfoKHR> groups{ {
             { vk::RayTracingShaderGroupTypeKHR::eGeneral, 0u },
             { vk::RayTracingShaderGroupTypeKHR::eGeneral, 1u },
-            { vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup, vk::ShaderUnusedKHR, 2u },
+            { vk::RayTracingShaderGroupTypeKHR::eGeneral, 2u },
+            { vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup, vk::ShaderUnusedKHR, 3u },
         } };
 
         std::vector<vk::StructureChain<vk::PipelineShaderStageCreateInfo, vk::ShaderModuleCreateInfo>> callableShaderCreateInfos{};
@@ -70,17 +112,18 @@ namespace he2rt {
 
     Buffer RaytracingEngine::createSBTBuffer() {
         auto callableShaderCount = scene.shaders.size();
-        auto groupCount = 3 + callableShaderCount;
-        auto& rtpProps = device.physicalDevice.rayTracingPipelineProperties;
-        auto sbtData = pipeline.getRayTracingShaderGroupHandlesKHR<uint8_t>(0, groupCount, rtpProps.shaderGroupHandleSize * groupCount);
 
-        uint32_t currentOffset{};
-
-        std::array<size_t, 4> sizes{ { 1, 1, 1, callableShaderCount } };
+        std::array<size_t, 4> sizes{ { 1, 2, 1, callableShaderCount } };
         std::array<uint32_t, 4> offsets{};
         std::array<vk::StridedDeviceAddressRegionKHR, 4> regions{};
 
+        auto groupCount = std::accumulate(sizes.begin(), sizes.end(), 0ull);
+        auto& rtpProps = device.physicalDevice.rayTracingPipelineProperties;
+        auto sbtData = pipeline.getRayTracingShaderGroupHandlesKHR<uint8_t>(0, groupCount, rtpProps.shaderGroupHandleSize * groupCount);
+
         uint32_t alignedHandleSize = util::align(rtpProps.shaderGroupHandleSize, rtpProps.shaderGroupHandleAlignment);
+
+        uint32_t currentOffset{};
 
         for (size_t i = 0; i < 4; i++) {
             offsets[i] = currentOffset;
@@ -126,13 +169,13 @@ namespace he2rt {
         return buffer;
     }
 
-    void RaytracingEngine::raytrace(vk::CommandBuffer& cmd, vk::ImageView& outputImage, const vk::Extent2D& viewport) {
-        Eigen::Matrix4f inverseView{ Eigen::Matrix4f::Identity() };
-
-        globalPushConstant.viewInverse = inverseView; // view.inverse().matrix();
+    void RaytracingEngine::raytrace(vk::CommandBuffer& cmd, vk::ImageView& outputImage, const vk::Extent2D& viewport, const Eigen::Affine3f& viewMatrix) {
+        globalPushConstant.viewInverse = viewMatrix.inverse().matrix();
 
         cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, pipeline);
-        //cmd.bindDescriptorSets2({ vk::ShaderStageFlagBits::eAll, pipelineLayout, 0, 1, WQEFVEWQFEW });
+
+        std::array<vk::DescriptorSet, 1> descriptorSets{ { staticDescriptorSet } };
+        cmd.bindDescriptorSets2({ vk::ShaderStageFlagBits::eAll, pipelineLayout, 0, descriptorSets });
 
         std::vector<vk::WriteDescriptorSet> writes{};
 
@@ -147,12 +190,7 @@ namespace he2rt {
         vk::WriteDescriptorSet outImgWrite{ {}, 1, 0, 1, vk::DescriptorType::eStorageImage, &outImgInfo };
         writes.emplace_back(outImgWrite);
 
-        for (uint32_t i = 0; i < scene.textures.size(); i++) {
-            vk::WriteDescriptorSet textureImgWrite{ {}, 2, i, 1, vk::DescriptorType::eCombinedImageSampler, &scene.textures[i].descriptor };
-            writes.emplace_back(textureImgWrite);
-        }
-
-        cmd.pushDescriptorSet(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, writes);
+        cmd.pushDescriptorSet(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 1, writes);
 
         cmd.pushConstants<shaders::PushConstant>(pipelineLayout, vk::ShaderStageFlagBits::eAll, 0, { globalPushConstant });
         cmd.traceRaysKHR(raygenRegion, missRegion, hitRegion, callableRegion, viewport.width, viewport.height, 1);

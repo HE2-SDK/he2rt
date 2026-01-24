@@ -8,7 +8,7 @@ namespace he2rt {
 		, deviceAddress{ deviceAddress }
 		, hostAddress{ hostAddress }
 	{
-		std::cout << "created buffer of size " << std::hex << size << ", at dev addr " << deviceAddress << ", with mapped addr " << hostAddress << std::dec << ", buffer id is" << VkBuffer{ vk::Buffer{ this->buffer } } << std::endl;
+		//std::cout << "created buffer of size " << std::hex << size << ", at dev addr " << deviceAddress << ", with mapped addr " << hostAddress << std::dec << ", buffer id is" << VkBuffer{ vk::Buffer{ this->buffer } } << std::endl;
 	}
 
 	Buffer::Buffer(Buffer&& other) noexcept
@@ -22,8 +22,8 @@ namespace he2rt {
 	}
 
 	Buffer::~Buffer() noexcept {
-		if (size != 0)
-			std::cout << "destroying buffer with size " << std::hex << size << " and addr " << deviceAddress << std::dec << std::endl;
+		//if (size != 0)
+		//	std::cout << "destroying buffer with size " << std::hex << size << " and addr " << deviceAddress << std::dec << std::endl;
 	}
 
 	Buffer& Buffer::operator=(Buffer&& other) noexcept {

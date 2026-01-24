@@ -12,16 +12,21 @@ namespace he2rt {
 		vk::StridedDeviceAddressRegionKHR missRegion{};
 		vk::StridedDeviceAddressRegionKHR hitRegion{};
 		vk::StridedDeviceAddressRegionKHR callableRegion{};
-		Eigen::Affine3f view{ Eigen::Affine3f::Identity() };
 
 		Device& device;
 		Scene& scene;
-		vk::raii::DescriptorSetLayout descriptorSetLayout;
+		vk::raii::DescriptorSetLayout staticDescriptorSetLayout;
+		vk::raii::DescriptorSetLayout pushDescriptorSetLayout;
+		vk::raii::DescriptorPool staticDescriptorSetPool;
+		vk::raii::DescriptorSet staticDescriptorSet;
 		vk::raii::PipelineLayout pipelineLayout;
 		vk::raii::Pipeline pipeline;
 		Buffer sbtBuffer;
 
-		vk::raii::DescriptorSetLayout createDescriptorSetLayout();
+		vk::raii::DescriptorSetLayout createStaticDescriptorSetLayout();
+		vk::raii::DescriptorSetLayout createPushDescriptorSetLayout();
+		vk::raii::DescriptorPool createStaticDescriptorSetPool();
+		vk::raii::DescriptorSet createStaticDescriptorSet();
 		vk::raii::PipelineLayout createPipelineLayout();
 		vk::raii::Pipeline createPipeline();
 		Buffer createSBTBuffer();
@@ -31,6 +36,6 @@ namespace he2rt {
 
 		RaytracingEngine(Device& device, Scene& scene);
 
-		void raytrace(vk::CommandBuffer& cmd, vk::ImageView& outputImage, const vk::Extent2D& viewport);
+		void raytrace(vk::CommandBuffer& cmd, vk::ImageView& outputImage, const vk::Extent2D& viewport, const Eigen::Affine3f& viewMatrix);
 	};
 }

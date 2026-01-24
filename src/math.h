@@ -67,10 +67,25 @@ inline float4x4 projectionMatrix(float fov, float ratio, float near, float far) 
 
 	float4x4 res{};
 	res.matrix() <<
-		focalLength / ratio, 0.0f, 0.0f, 0.0f,
-		0.0f, focalLength, 0.0f, 0.0f,
+		-focalLength / ratio, 0.0f, 0.0f, 0.0f,
+		0.0f, -focalLength, 0.0f, 0.0f,
 		0.0f, 0.0f, -far / (far - near), -(far * near) / (far - near),
 		0.0f, 0.0f, -1.0f, 0.0f;
+
+	return res;
+}
+
+inline float4x4 lookatMatrix(const Eigen::Vector3f& pos, const Eigen::Vector3f& target, const Eigen::Vector3f& up) {
+	Eigen::Vector3f z{ (pos - target).normalized() };
+	Eigen::Vector3f x{ up.cross(z).normalized() };
+	Eigen::Vector3f y{ z.cross(x) };
+
+	float4x4 res{};
+	res.matrix() <<
+		x.x(), x.y(), x.z(), -x.dot(pos),
+		y.x(), y.y(), y.z(), -y.dot(pos),
+		z.x(), z.y(), z.z(), -z.dot(pos),
+		0.0f, 0.0f, 0.0f, 1.0f;
 
 	return res;
 }

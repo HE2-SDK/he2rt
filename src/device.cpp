@@ -97,17 +97,20 @@ namespace he2rt {
         return { std::move(buffer), std::move(structure), deviceAddress };
     }
 
-    AccelerationStructure Device::buildAS(vk::AccelerationStructureTypeKHR type, const vk::AccelerationStructureGeometryKHR& geometry, const vk::AccelerationStructureBuildRangeInfoKHR& rangeInfo) {
+    AccelerationStructure Device::buildAS(vk::AccelerationStructureTypeKHR type, const std::span<vk::AccelerationStructureGeometryKHR>& geometries, const std::span<vk::AccelerationStructureBuildRangeInfoKHR>& rangeInfos) {
         vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo{
             type,
             vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace,
             vk::BuildAccelerationStructureModeKHR::eBuild,
             {},
             {},
-            { geometry },
+            geometries,
         };
 
-        auto buildSizes = device.getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice, geometryInfo, { rangeInfo.primitiveCount });
+        std::vector<uint32_t> maxPrimitiveCounts{};
+        maxPrimitiveCounts.reserve(rangeInfos.size());
+        std::transform(rangeInfos.begin(), rangeInfos.end(), std::back_inserter(maxPrimitiveCounts), [](const vk::AccelerationStructureBuildRangeInfoKHR& rangeInfo) { return rangeInfo.primitiveCount; });
+        auto buildSizes = device.getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice, geometryInfo, maxPrimitiveCounts);
 
         auto scratchBuffer = createBuffer(
             util::align(buildSizes.buildScratchSize, physicalDevice.accelerationStructureProperties.minAccelerationStructureScratchOffsetAlignment),
@@ -120,19 +123,19 @@ namespace he2rt {
         geometryInfo.dstAccelerationStructure = as.structure;
         geometryInfo.scratchData.deviceAddress = scratchBuffer.deviceAddress;
 
-        runOneTimeCommandBuffer([&](auto& cmd) {
-            cmd.buildAccelerationStructuresKHR({ geometryInfo }, { &rangeInfo });
+        runOneTimeCommandBuffer([&](vk::CommandBuffer& cmd) {
+            cmd.buildAccelerationStructuresKHR({ geometryInfo }, { rangeInfos.data() });
         });
 
         return as;
     }
 
-    AccelerationStructure Device::buildBLAS(const vk::AccelerationStructureGeometryKHR& geometry, const vk::AccelerationStructureBuildRangeInfoKHR& rangeInfo) {
-        return buildAS(vk::AccelerationStructureTypeKHR::eBottomLevel, geometry, rangeInfo);
+    AccelerationStructure Device::buildBLAS(const std::span<vk::AccelerationStructureGeometryKHR>& geometries, const std::span<vk::AccelerationStructureBuildRangeInfoKHR>& rangeInfos) {
+        return buildAS(vk::AccelerationStructureTypeKHR::eBottomLevel, geometries, rangeInfos);
     }
 
-    AccelerationStructure Device::buildTLAS(const vk::AccelerationStructureGeometryKHR& geometry, const vk::AccelerationStructureBuildRangeInfoKHR& rangeInfo) {
-        return buildAS(vk::AccelerationStructureTypeKHR::eTopLevel, geometry, rangeInfo);
+    AccelerationStructure Device::buildTLAS(const std::span<vk::AccelerationStructureGeometryKHR>& geometries, const std::span<vk::AccelerationStructureBuildRangeInfoKHR>& rangeInfos) {
+        return buildAS(vk::AccelerationStructureTypeKHR::eTopLevel, geometries, rangeInfos);
     }
 
     vk::raii::Semaphore Device::createSemaphore(uint64_t initialValue) {

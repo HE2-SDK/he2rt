@@ -1,10 +1,10 @@
 #pragma once
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
-#define VMA_DEBUG_LOG_FORMAT(format, ...) do { \
-       printf((format), __VA_ARGS__); \
-       printf("\n"); \
-   } while(false)
+//#define VMA_DEBUG_LOG_FORMAT(format, ...) do { \
+//       printf((format), __VA_ARGS__); \
+//       printf("\n"); \
+//   } while(false)
 #include <vk_mem_alloc.hpp>
 #include <vk_mem_alloc_raii.hpp>
 #include <optional>
@@ -45,9 +45,9 @@ namespace he2rt {
         Image createImage(const vk::ImageCreateInfo& imageCreateInfo, const vma::AllocationCreateInfo& allocationCreateInfo);
         Sampler createSampler(const vk::SamplerCreateInfo& samplerCreateInfo);
         AccelerationStructure createAS(vk::AccelerationStructureTypeKHR type, const vk::AccelerationStructureBuildSizesInfoKHR& buildSizes);
-        AccelerationStructure buildAS(vk::AccelerationStructureTypeKHR type, const vk::AccelerationStructureGeometryKHR& geometry, const vk::AccelerationStructureBuildRangeInfoKHR& rangeInfo);
-        AccelerationStructure buildBLAS(const vk::AccelerationStructureGeometryKHR& geometry, const vk::AccelerationStructureBuildRangeInfoKHR& rangeInfo);
-        AccelerationStructure buildTLAS(const vk::AccelerationStructureGeometryKHR& geometry, const vk::AccelerationStructureBuildRangeInfoKHR& rangeInfo);
+        AccelerationStructure buildAS(vk::AccelerationStructureTypeKHR type, const std::span<vk::AccelerationStructureGeometryKHR>& geometries, const std::span<vk::AccelerationStructureBuildRangeInfoKHR>& rangeInfos);
+        AccelerationStructure buildBLAS(const std::span<vk::AccelerationStructureGeometryKHR>& geometries, const std::span<vk::AccelerationStructureBuildRangeInfoKHR>& rangeInfos);
+        AccelerationStructure buildTLAS(const std::span<vk::AccelerationStructureGeometryKHR>& geometries, const std::span<vk::AccelerationStructureBuildRangeInfoKHR>& rangeInfos);
         vk::raii::Semaphore createSemaphore(uint64_t initialValue = 0);
 
         template<typename F>

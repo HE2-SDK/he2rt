@@ -1,14 +1,16 @@
 #include "shader-types.slang"
+#include "lighting/material.slang"
+#include "lighting/normals.slang"
 
 using namespace he2rt::shaders;
 
 [[vk::push_constant]] ConstantBuffer<PushConstant> pushConst;
-[[vk::binding(2)]] Sampler2D textures[];
+[[vk::binding(0, 0)]] Sampler2D textures[];
 
 struct Parameters {
 	uint32_t diffuseTextureId;
 	uint32_t specularTextureId;
-	uint32_t normalTextureId;
+    uint32_t normalTextureId;
 };
 
 [shader("callable")]
@@ -18,13 +20,14 @@ void main(inout MaterialShaderPayload payload) {
     Sampler2D diffuseTexture = textures[params.diffuseTextureId];
     Sampler2D specularTexture = textures[params.specularTextureId];
     Sampler2D normalTexture = textures[params.normalTextureId];
-    
-    float distance = length(normalize(payload.position));
-    float diffuse = max(dot(payload.lightDirection, payload.normal), 0.0);
-    
-    diffuse = diffuse * (1.0 / (1.0 + 0.25 * distance * distance));
+
+    LightingParameters lightingParams;
+    lightingParams.hit = payload.hit;
+    lightingParams.world_normal = UnpackNormalMapSafe(payload.surface.basis, normalTexture.SampleLevel(payload.surface.uv, 0).xy);
+    LoadAlbedoTexture(lightingParams.material, diffuseTexture.SampleLevel(payload.surface.uv, 0).xyz);
+    LoadPRMTexture(lightingParams.material, specularTexture.SampleLevel(payload.surface.uv, 0).xyzw);
 
     //payload.color = float3(params.diffuse, params.specular, params.normal) / float3(30.0f);
-    
-    payload.color = diffuse * diffuseTexture.SampleLevel(payload.uv, 0).xyz;
+
+    payload.color = EvaluateMaterial(lightingParams);
 }

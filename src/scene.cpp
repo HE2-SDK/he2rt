@@ -5,14 +5,44 @@
 using GI = ucsl::reflection::game_interfaces::standalone::StandaloneGameInterface;
 
 namespace he2rt {
-    Mesh::Mesh(Buffer&& indexBuffer, Buffer&& vertexBuffer) : indexBuffer{ std::move(indexBuffer) }, vertexBuffer{ std::move(vertexBuffer) } {
+    Scene::Model::Model(Model&& other)
+        : meshes{ std::move(other.meshes) }
+        , shaderMeshes{ std::move(other.shaderMeshes) }
+        , meshBuffer{ std::move(other.meshBuffer) }
+        , blas{ std::move(other.blas) }
+    {}
+
+    Scene::Model& Scene::Model::operator=(Model&& other) {
+        meshes = std::move(other.meshes);
+        shaderMeshes = std::move(other.shaderMeshes);
+        meshBuffer = std::move(other.meshBuffer);
+        blas = std::move(other.blas);
+        return *this;
     }
 
-    Mesh::Mesh(Mesh&& other) : indexBuffer{ std::move(other.indexBuffer) }, vertexBuffer{ std::move(other.vertexBuffer) } {
+    Buffer Scene::Model::createMeshBuffer(Scene& scene) {
+        auto buffer = scene.device.createBuffer(
+            shaderMeshes.size() * sizeof(shaders::Mesh),
+            alignof(shaders::Mesh),
+            vk::BufferUsageFlagBits2::eStorageBuffer | vk::BufferUsageFlagBits2::eTransferDst
+        );
+
+        {
+            StagingArea staging{ scene.device };
+            staging.addBuffer(buffer, std::span{ shaderMeshes });
+            scene.device.runOneTimeCommandBuffer([&](auto& cmd) { staging.upload(cmd); });
+        }
+
+        return buffer;
     }
 
-    Mesh& Mesh::operator=(Mesh&& other) {
-        std::cout << "moving assigning model" << std::endl;
+    Scene::Model::Mesh::Mesh(Buffer&& indexBuffer, Buffer&& vertexBuffer) : indexBuffer{ std::move(indexBuffer) }, vertexBuffer{ std::move(vertexBuffer) } {
+    }
+
+    Scene::Model::Mesh::Mesh(Mesh&& other) : indexBuffer{ std::move(other.indexBuffer) }, vertexBuffer{ std::move(other.vertexBuffer) } {
+    }
+
+    Scene::Model::Mesh& Scene::Model::Mesh::operator=(Mesh&& other) {
         indexBuffer = std::move(other.indexBuffer);
         vertexBuffer = std::move(other.vertexBuffer);
         return *this;
@@ -21,42 +51,67 @@ namespace he2rt {
     Scene::Scene(Device& device) : device{ device } {
     }
 
-    void Scene::addModel(std::istream& stream) {
-        rip::binary::containers::mirage::v2::MirageResourceImageReader<unsigned int, false, true> reader{ stream };
+    void Scene::addModel(const std::string& name, const std::string& filename) {
+        std::ifstream ifs{ filename, std::ios::binary | std::ios::ate };
+        size_t fileSize = ifs.tellg();
 
-        auto rootNode = reader.get_root_node();
+        auto fileData = std::make_unique<uint8_t[]>(fileSize);
 
-        if (rootNode.header.magic == "Model   ") {
-            rootNode.for_each_child([&](auto& modelChild) {
-                if (modelChild.header.magic == "Contexts") {
-                    auto& stream = modelChild.get_stream();
+        ifs.seekg(std::ios::beg);
+        ifs.read((char*)&fileData[0], fileSize);
 
-                    ucsl::reflection::providers::BoundProvider::RootType refl{ ucsl::reflection::providers::simplerfl<GI, unsigned int>::Type<ucsl::resources::model::v5::reflections::ContextsData>{} };
-                    typename rip::accessors::binary_istream<std::remove_reference_t<decltype(stream)>>::template ValueAccessor<decltype(refl)> acc{ stream, refl };
+        imemstream ims{ (char*)&fileData[0], fileSize };
 
-                    auto contexts = acc.as_structure();
-                    addMeshGroup(contexts.get_field<"meshGroups">().as_pointer().get().value().as_carray()[0].as_pointer().get().value().as_structure());
+        ucsl::magic_t<8> magic{};
+        ims.read(magic.buffer.data(), 8);
+        ims.seekg(0);
 
-                    //auto nodes = contexts.get_field<"nodes">().as_pointer().get().value().as_carray();
-                    //for (size_t i = 0; i < nodes.get_length(); i++) {
-                    //    auto node = nodes[i].as_pointer().get().value().as_structure();
-                    //    std::string name = node.get_field<"name">().as_primitive().as<const char*>();
-                    //    std::cout << "Node: " << name << std::endl;
-                    //}
-
-                }
-                else if (modelChild.header.magic == "Topology") {
-
-                }
-                else if (modelChild.header.magic == "UserAABB") {
-
-                }
-                else if (modelChild.header.magic == "NodesExt") {
-
+        if (magic == "NEDARCV1") {
+            bool found{};
+            rip::binary::containers::needle_archive::v1::NeedleArchiveReader<unsigned int> reader{ ims };
+            reader.forEachChunk([&](auto& chunk) {
+                if (found) return;
+                if (chunk.header.magic == "NEDMDLV5") {
+                    addModel<false, true>(name, ims);
+                    found = true;
                 }
             });
         }
-	}
+        else {
+            addModel(name, ims);
+        }
+    }
+
+    void Scene::addTerrainModel(const std::string& name, const std::string& filename) {
+        std::ifstream ifs{ filename, std::ios::binary | std::ios::ate };
+        size_t fileSize = ifs.tellg();
+
+        auto fileData = std::make_unique<uint8_t[]>(fileSize);
+
+        ifs.seekg(std::ios::beg);
+        ifs.read((char*)&fileData[0], fileSize);
+
+        imemstream ims{ (char*)&fileData[0], fileSize };
+
+        ucsl::magic_t<8> magic{};
+        ims.read(magic.buffer.data(), 8);
+        ims.seekg(0);
+
+        if (magic == "NEDARCV1") {
+            bool found{};
+            rip::binary::containers::needle_archive::v1::NeedleArchiveReader<unsigned int> reader{ ims };
+            reader.forEachChunk([&](auto& chunk) {
+                if (found) return;
+                if (chunk.header.magic == "NEDMDLV5") {
+                    addTerrainModel<false, true>(name, ims);
+                    found = true;
+                }
+            });
+        }
+        else {
+            addTerrainModel(name, ims);
+        }
+    }
 
     void Scene::addTexture(const std::string& name, const std::string& filename) {
         dds::Image ddsImage;
@@ -69,6 +124,12 @@ namespace he2rt {
 
         imageCreateInfo.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst;
         imageCreateInfo.samples = vk::SampleCountFlagBits::e1;
+
+        if (ddsImage.format == DXGI_FORMAT_BC6H_UF16)
+            imageCreateInfo.format = vk::Format::eBc6HUfloatBlock;
+
+        if (ddsImage.format == DXGI_FORMAT_BC6H_SF16)
+            imageCreateInfo.format = vk::Format::eBc6HSfloatBlock;
 
         auto image = device.createImage(imageCreateInfo);
 
@@ -126,11 +187,22 @@ namespace he2rt {
         });
 
         auto imageView = device.device.createImageView(imageViewCreateInfo);
-        auto sampler = device.createSampler({});
+        auto sampler = device.createSampler({
+            {},
+            vk::Filter::eLinear,
+            vk::Filter::eLinear,
+            vk::SamplerMipmapMode::eNearest,
+            vk::SamplerAddressMode::eRepeat,
+            vk::SamplerAddressMode::eRepeat,
+            vk::SamplerAddressMode::eRepeat,
+            {},
+        });
         vk::DescriptorImageInfo descriptor{ sampler.sampler, imageView, vk::ImageLayout::eGeneral };
 
         textures.emplace_back(std::move(image), std::move(imageView), std::move(sampler), std::move(descriptor));
         textureIdsByName[name] = textureId;
+
+        std::cout << "Loaded texture " << name << std::endl;
     }
 
     void Scene::addMaterial(const std::string& name, std::istream& stream) {
@@ -163,130 +235,130 @@ namespace he2rt {
                     auto boolParamCount = contexts.get_field<"boolParamCount">().as_primitive().as<unsigned char>();
                     auto textureCount = contexts.get_field<"textureCount">().as_primitive().as<unsigned char>();
 
-                    std::cout << "Shader name: " << shaderName << std::endl;
-                    std::cout << "Shader subname: " << subShaderName << std::endl;
-                    std::cout << "Texture names:" << std::endl;
-                    for (size_t i = 0; i < textureNames.get_length(); i++) {
-                        std::string textureName = textureNames[i].as_primitive().as<const char*>();
+                    //std::cout << "Shader name: " << shaderName << std::endl;
+                    //std::cout << "Shader subname: " << subShaderName << std::endl;
+                    //std::cout << "Texture names:" << std::endl;
+                    //for (size_t i = 0; i < textureNames.get_length(); i++) {
+                    //    std::string textureName = textureNames[i].as_primitive().as<const char*>();
 
-                        std::cout << "  " << textureName << std::endl;
-                    }
+                    //    std::cout << "  " << textureName << std::endl;
+                    //}
 
-                    std::cout << "Textures:" << std::endl;
-                    for (size_t i = 0; i < textures.get_length(); i++) {
-                        auto texture = textures[i].as_pointer().get().value().as_structure();
+                    //std::cout << "Textures:" << std::endl;
+                    //for (size_t i = 0; i < textures.get_length(); i++) {
+                    //    auto texture = textures[i].as_pointer().get().value().as_structure();
 
-                        std::string name = texture.get_field<"name">().as_primitive().as<const char*>();
-                        std::string type = texture.get_field<"type">().as_primitive().as<const char*>();
-                        auto texCoordIndex = texture.get_field<"texCoordIndex">().as_primitive().as<unsigned char>();
-                        auto wrapModeU = texture.get_field<"wrapModeU">().as_enum();
-                        auto wrapModeV = texture.get_field<"wrapModeV">().as_enum();
+                    //    std::string name = texture.get_field<"name">().as_primitive().as<const char*>();
+                    //    std::string type = texture.get_field<"type">().as_primitive().as<const char*>();
+                    //    auto texCoordIndex = texture.get_field<"texCoordIndex">().as_primitive().as<unsigned char>();
+                    //    auto wrapModeU = texture.get_field<"wrapModeU">().as_enum();
+                    //    auto wrapModeV = texture.get_field<"wrapModeV">().as_enum();
 
-                        std::cout << "  Name: " << name << std::endl;
-                        std::cout << "  Type: " << type << std::endl;
-                        std::cout << "  TexCoordIdx: " << static_cast<unsigned int>(texCoordIndex) << std::endl;
+                    //    std::cout << "  Name: " << name << std::endl;
+                    //    std::cout << "  Type: " << type << std::endl;
+                    //    std::cout << "  TexCoordIdx: " << static_cast<unsigned int>(texCoordIndex) << std::endl;
 
-                        for (auto& enumOption : wrapModeU.refl.get_options()) {
-                            if (wrapModeU == enumOption.GetIndex()) {
-                                std::cout << "  WrapModeU: " << enumOption.GetEnglishName() << std::endl;
-                            }
-                        }
+                    //    for (auto& enumOption : wrapModeU.refl.get_options()) {
+                    //        if (wrapModeU == enumOption.GetIndex()) {
+                    //            std::cout << "  WrapModeU: " << enumOption.GetEnglishName() << std::endl;
+                    //        }
+                    //    }
 
-                        for (auto& enumOption : wrapModeV.refl.get_options()) {
-                            if (wrapModeV == enumOption.GetIndex()) {
-                                std::cout << "  WrapModeV: " << enumOption.GetEnglishName() << std::endl;
-                            }
-                        }
-                    }
+                    //    for (auto& enumOption : wrapModeV.refl.get_options()) {
+                    //        if (wrapModeV == enumOption.GetIndex()) {
+                    //            std::cout << "  WrapModeV: " << enumOption.GetEnglishName() << std::endl;
+                    //        }
+                    //    }
+                    //}
 
-                    for (auto& enumOption : blendMode.refl.get_options()) {
-                        if (blendMode == enumOption.GetIndex()) {
-                            std::cout << "Blend Mode: " << enumOption.GetEnglishName() << std::endl;
-                        }
-                    }
+                    //for (auto& enumOption : blendMode.refl.get_options()) {
+                    //    if (blendMode == enumOption.GetIndex()) {
+                    //        std::cout << "Blend Mode: " << enumOption.GetEnglishName() << std::endl;
+                    //    }
+                    //}
 
-                    std::cout << "Unknown flag: " << static_cast<unsigned int>(unknownFlag1) << std::endl;
+                    //std::cout << "Unknown flag: " << static_cast<unsigned int>(unknownFlag1) << std::endl;
 
-                    std::cout << "Float params:" << std::endl;
+                    //std::cout << "Float params:" << std::endl;
 
-                    if (floatParamCount > 0) {
-                        auto floatParams = contexts.get_field<"floatParams">().as_pointer().get().value().as_carray();
+                    //if (floatParamCount > 0) {
+                    //    auto floatParams = contexts.get_field<"floatParams">().as_pointer().get().value().as_carray();
 
-                        for (size_t i = 0; i < floatParams.get_length(); i++) {
-                            auto param = floatParams[i].as_pointer().get().value().as_structure();
+                    //    for (size_t i = 0; i < floatParams.get_length(); i++) {
+                    //        auto param = floatParams[i].as_pointer().get().value().as_structure();
 
-                            std::string name = param.get_field<"name">().as_primitive().as<const char*>();
-                            auto values = param.get_field<"values">().as_pointer().get().value().as_carray();
+                    //        std::string name = param.get_field<"name">().as_primitive().as<const char*>();
+                    //        auto values = param.get_field<"values">().as_pointer().get().value().as_carray();
 
-                            std::cout << "  " << name << std::endl;
+                    //        std::cout << "  " << name << std::endl;
 
-                            for (size_t j = 0; j < values.get_length(); j++) {
-                                auto singleValue = values[j].as_carray();
+                    //        for (size_t j = 0; j < values.get_length(); j++) {
+                    //            auto singleValue = values[j].as_carray();
 
-                                std::cout << "    ";
+                    //            std::cout << "    ";
 
-                                for (size_t k = 0; k < singleValue.get_length(); k++) {
-                                    std::cout << singleValue[k].as_primitive().as<float>() << " ";
-                                }
+                    //            for (size_t k = 0; k < singleValue.get_length(); k++) {
+                    //                std::cout << singleValue[k].as_primitive().as<float>() << " ";
+                    //            }
 
-                                std::cout << std::endl;
-                            }
-                        }
-                    }
+                    //            std::cout << std::endl;
+                    //        }
+                    //    }
+                    //}
 
-                    std::cout << "Uint params:" << std::endl;
+                    //std::cout << "Uint params:" << std::endl;
 
-                    if (uintParamCount > 0) {
-                        auto uintParams = contexts.get_field<"uintParams">().as_pointer().get().value().as_carray();
+                    //if (uintParamCount > 0) {
+                    //    auto uintParams = contexts.get_field<"uintParams">().as_pointer().get().value().as_carray();
 
-                        for (size_t i = 0; i < uintParams.get_length(); i++) {
-                            auto param = uintParams[i].as_pointer().get().value().as_structure();
+                    //    for (size_t i = 0; i < uintParams.get_length(); i++) {
+                    //        auto param = uintParams[i].as_pointer().get().value().as_structure();
 
-                            std::string name = param.get_field<"name">().as_primitive().as<const char*>();
-                            auto values = param.get_field<"values">().as_pointer().get().value().as_carray();
+                    //        std::string name = param.get_field<"name">().as_primitive().as<const char*>();
+                    //        auto values = param.get_field<"values">().as_pointer().get().value().as_carray();
 
-                            std::cout << "  " << name << std::endl;
+                    //        std::cout << "  " << name << std::endl;
 
-                            for (size_t j = 0; j < values.get_length(); j++) {
-                                auto singleValue = values[j].as_carray();
+                    //        for (size_t j = 0; j < values.get_length(); j++) {
+                    //            auto singleValue = values[j].as_carray();
 
-                                std::cout << "    ";
+                    //            std::cout << "    ";
 
-                                for (size_t k = 0; k < singleValue.get_length(); k++) {
-                                    std::cout << singleValue[k].as_primitive().as<unsigned int>() << " ";
-                                }
+                    //            for (size_t k = 0; k < singleValue.get_length(); k++) {
+                    //                std::cout << singleValue[k].as_primitive().as<unsigned int>() << " ";
+                    //            }
 
-                                std::cout << std::endl;
-                            }
-                        }
-                    }
+                    //            std::cout << std::endl;
+                    //        }
+                    //    }
+                    //}
 
-                    std::cout << "Bool params:" << std::endl;
+                    //std::cout << "Bool params:" << std::endl;
 
-                    if (boolParamCount > 0) {
-                        auto boolParams = contexts.get_field<"boolParams">().as_pointer().get().value().as_carray();
+                    //if (boolParamCount > 0) {
+                    //    auto boolParams = contexts.get_field<"boolParams">().as_pointer().get().value().as_carray();
 
-                        for (size_t i = 0; i < boolParams.get_length(); i++) {
-                            auto param = boolParams[i].as_pointer().get().value().as_structure();
+                    //    for (size_t i = 0; i < boolParams.get_length(); i++) {
+                    //        auto param = boolParams[i].as_pointer().get().value().as_structure();
 
-                            std::string name = param.get_field<"name">().as_primitive().as<const char*>();
-                            auto values = param.get_field<"values">().as_pointer().get().value().as_carray();
+                    //        std::string name = param.get_field<"name">().as_primitive().as<const char*>();
+                    //        auto values = param.get_field<"values">().as_pointer().get().value().as_carray();
 
-                            std::cout << "  " << name << std::endl;
+                    //        std::cout << "  " << name << std::endl;
 
-                            for (size_t j = 0; j < values.get_length(); j++) {
-                                auto singleValue = values[j].as_carray();
+                    //        for (size_t j = 0; j < values.get_length(); j++) {
+                    //            auto singleValue = values[j].as_carray();
 
-                                std::cout << "    ";
+                    //            std::cout << "    ";
 
-                                for (size_t k = 0; k < singleValue.get_length(); k++) {
-                                    std::cout << singleValue[k].as_primitive().as<bool>() << " ";
-                                }
+                    //            for (size_t k = 0; k < singleValue.get_length(); k++) {
+                    //                std::cout << singleValue[k].as_primitive().as<bool>() << " ";
+                    //            }
 
-                                std::cout << std::endl;
-                            }
-                        }
-                    }
+                    //            std::cout << std::endl;
+                    //        }
+                    //    }
+                    //}
 
                     auto materialShaderIt{ materialShaders.find(shaderName) };
 
@@ -299,7 +371,6 @@ namespace he2rt {
                     auto shaderParamsPtr{ std::make_unique<char[]>(inputLayout.size + 16) };
                     auto* shaderParams{ util::align(shaderParamsPtr.get(), 16)};
 
-                    std::cout << "Textures:" << std::endl;
                     for (size_t i = 0; i < textures.get_length(); i++) {
                         auto texture = textures[i].as_pointer().get().value().as_structure();
                         std::string name = texture.get_field<"name">().as_primitive().as<const char*>();
@@ -312,8 +383,6 @@ namespace he2rt {
 
                         auto* param = (shaders::Sampler*)&shaderParams[offsetIt->second];
                         param->textureId = textureIdsByName[name];
-
-                        std::cout << "using tex id " << param->textureId << std::endl;
 
                         //auto texCoordIndex = texture.get_field<"texCoordIndex">().as_primitive().as<unsigned char>();
                         //auto wrapModeU = texture.get_field<"wrapModeU">().as_enum();
@@ -440,6 +509,8 @@ namespace he2rt {
                     shaderMaterials.emplace_back((uint8_t*)paramBuffer.deviceAddress, shaderId);
                     materials.emplace_back(std::move(paramBuffer));
                     materialIdsByName[name] = materialId;
+
+                    std::cout << "Loaded material " << name << std::endl;
                 }
                 else if (materialChild.header.magic == "SCAParam") {
                     materialChild.for_each_child([&](auto& scaParamChild) {
@@ -500,7 +571,16 @@ namespace he2rt {
     }
 
     void Scene::addMaterial(const std::string& name, const std::string& filename) {
-        std::ifstream ims{ filename, std::ios::binary };
+        std::ifstream ifs{ filename, std::ios::binary | std::ios::ate };
+        size_t fileSize = ifs.tellg();
+
+        auto fileData = std::make_unique<uint8_t[]>(fileSize);
+
+        ifs.seekg(std::ios::beg);
+        ifs.read((char*)&fileData[0], fileSize);
+
+        imemstream ims{ (char*)&fileData[0], fileSize };
+
         addMaterial(name, ims);
     }
 
@@ -512,6 +592,92 @@ namespace he2rt {
 
     void Scene::addMaterialShader(const std::string& name, std::istream& stream) {
 
+    }
+
+    void Scene::addModelInstance(const std::string& modelName, const Eigen::Affine3f& transform) {
+        auto modelIt{ modelIdsByName.find(modelName) };
+
+        if (modelIt == modelIdsByName.end())
+            throw std::runtime_error{ std::string{ "Unknown model: " } + modelName };
+
+        auto modelId = modelIt->second;
+        auto& model = models[modelId];
+
+        using VulkanCompatibleTransform = Eigen::Transform<float, 3, Eigen::AffineCompact, Eigen::RowMajor>;
+
+        VulkanCompatibleTransform tf{ transform };
+
+        tlasInstances.push_back(vk::AccelerationStructureInstanceKHR{
+            *reinterpret_cast<vk::TransformMatrixKHR*>(tf.data()),
+            modelId,
+            0xFF,
+            0,
+            vk::GeometryInstanceFlagBitsKHR::eTriangleCullDisable,
+            model.blas.deviceAddress,
+        });
+    }
+
+    void Scene::addModelInstances(const std::string& filename) {
+        std::ifstream ifs{ filename, std::ios::binary | std::ios::ate };
+        size_t fileSize = ifs.tellg();
+
+        auto fileData = std::make_unique<uint8_t[]>(fileSize);
+
+        ifs.seekg(std::ios::beg);
+        ifs.read((char*)&fileData[0], fileSize);
+
+        imemstream ims{ (char*)&fileData[0], fileSize };
+
+        addModelInstances(ims);
+    }
+
+    Eigen::Quaternionf FromPCRotation(const Eigen::Vector3f& rotation, ucsl::resources::pointcloud::v2::RotationOrder rotationOrder) {
+        switch (rotationOrder) {
+        case ucsl::resources::pointcloud::v2::RotationOrder::XYZ: return Eigen::AngleAxisf(rotation[2], Eigen::Vector3f::UnitZ()) * Eigen::AngleAxisf(rotation[1], Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(rotation[0], Eigen::Vector3f::UnitX());
+        case ucsl::resources::pointcloud::v2::RotationOrder::YZX: return Eigen::AngleAxisf(rotation[0], Eigen::Vector3f::UnitX()) * Eigen::AngleAxisf(rotation[2], Eigen::Vector3f::UnitZ()) * Eigen::AngleAxisf(rotation[1], Eigen::Vector3f::UnitY());
+        case ucsl::resources::pointcloud::v2::RotationOrder::ZXY: return Eigen::AngleAxisf(rotation[1], Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(rotation[0], Eigen::Vector3f::UnitX()) * Eigen::AngleAxisf(rotation[2], Eigen::Vector3f::UnitZ());
+        case ucsl::resources::pointcloud::v2::RotationOrder::XZY: return Eigen::AngleAxisf(rotation[1], Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(rotation[2], Eigen::Vector3f::UnitZ()) * Eigen::AngleAxisf(rotation[0], Eigen::Vector3f::UnitX());
+        case ucsl::resources::pointcloud::v2::RotationOrder::YXZ: return Eigen::AngleAxisf(rotation[2], Eigen::Vector3f::UnitZ()) * Eigen::AngleAxisf(rotation[0], Eigen::Vector3f::UnitX()) * Eigen::AngleAxisf(rotation[1], Eigen::Vector3f::UnitY());
+        case ucsl::resources::pointcloud::v2::RotationOrder::ZYX: return Eigen::AngleAxisf(rotation[0], Eigen::Vector3f::UnitX()) * Eigen::AngleAxisf(rotation[1], Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(rotation[2], Eigen::Vector3f::UnitZ());
+        default: return Eigen::AngleAxisf(rotation[0], Eigen::Vector3f::UnitX()) * Eigen::AngleAxisf(rotation[1], Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(rotation[2], Eigen::Vector3f::UnitZ());
+        }
+    }
+
+    void Scene::addModelInstances(std::istream& stream) {
+        rip::binary::containers::binary_file::v2::BinaryFileReader<uint64_t> bfr{ stream };
+        
+        auto chunk = bfr.getNextDataChunk();
+
+        ucsl::reflection::providers::BoundProvider::RootType refl{ ucsl::reflection::providers::simplerfl<GI, uint64_t>::Type<ucsl::resources::pointcloud::v2::reflections::PointcloudData>{} };
+
+        typename rip::accessors::binary_istream<std::remove_reference_t<decltype(chunk)>>::template ValueAccessor<decltype(refl)> acc{ chunk, refl };
+
+        auto pointcloudData = acc.as_structure();
+        auto instances = pointcloudData.get_field<"instances">().as_pointer().get().value().as_carray();
+
+        for (size_t i = 0; i < instances.get_length(); i++) {
+            auto instance = instances[i].as_structure();
+
+            std::string name = instance.get_field<"name">().as_primitive().as<const char*>();
+            std::string modelName = instance.get_field<"resourceName">().as_primitive().as<const char*>();
+            ucsl::math::Position position = instance.get_field<"position">().as_primitive().as<ucsl::math::Position>();
+            ucsl::math::Position rotation = instance.get_field<"rotation">().as_primitive().as<ucsl::math::Position>();
+            ucsl::math::Position scale = instance.get_field<"scale">().as_primitive().as<ucsl::math::Position>();
+            auto rotationOrder = static_cast<ucsl::resources::pointcloud::v2::RotationOrder>(static_cast<long long>(instance.get_field<"rotationOrder">().as_enum()));
+
+            auto rotationQ = FromPCRotation(rotation, rotationOrder);
+
+            Eigen::Affine3f tf{};
+            tf.fromPositionOrientationScale(position, rotationQ, scale);
+
+            try {
+                addModelInstance(modelName, tf);
+                std::cout << "Loaded model instance " << name << std::endl;
+            }
+            catch (std::runtime_error& err) {
+                std::cout << "could not load " << modelName << std::endl;
+            }
+        }
     }
 
     void Scene::generateMaterialBuffer() {
@@ -528,16 +694,16 @@ namespace he2rt {
         }
     }
 
-    void Scene::generateMeshBuffer() {
-        meshBuffer = device.createBuffer(
-            shaderMeshes.size() * sizeof(shaders::Mesh),
+    void Scene::generateModelBuffer() {
+        modelBuffer = device.createBuffer(
+            shaderModels.size() * sizeof(shaders::Model),
             alignof(shaders::Mesh),
             vk::BufferUsageFlagBits2::eStorageBuffer | vk::BufferUsageFlagBits2::eTransferDst
         );
 
         {
             StagingArea staging{ device };
-            staging.addBuffer(meshBuffer.value(), std::span{ shaderMeshes });
+            staging.addBuffer(modelBuffer.value(), std::span{ shaderModels });
             device.runOneTimeCommandBuffer([&](auto& cmd) { staging.upload(cmd); });
         }
     }
@@ -556,9 +722,15 @@ namespace he2rt {
         }
 
         vk::AccelerationStructureGeometryInstancesDataKHR geometryInstances{ {}, { buffer.deviceAddress } };
-        vk::AccelerationStructureGeometryKHR geometry{ vk::GeometryTypeKHR::eInstances, geometryInstances };
-        vk::AccelerationStructureBuildRangeInfoKHR rangeInfo{ (uint32_t)tlasInstances.size() };
+        std::array<vk::AccelerationStructureGeometryKHR, 1> geometries{ { { vk::GeometryTypeKHR::eInstances, geometryInstances } } };
+        std::array<vk::AccelerationStructureBuildRangeInfoKHR, 1> rangeInfos{ { (uint32_t)tlasInstances.size() } };
 
-        tlas = device.buildTLAS(geometry, rangeInfo);
+        tlas = device.buildTLAS(geometries, rangeInfos);
+    }
+
+    void Scene::finalize() {
+        generateMaterialBuffer();
+        generateModelBuffer();
+        buildTLAS();
     }
 }

@@ -5,14 +5,18 @@
 using namespace he2rt::shaders;
 
 [[vk::push_constant]] ConstantBuffer<PushConstant> pushConst;
-[[vk::binding(0)]] RaytracingAccelerationStructure tlas;
-[[vk::binding(1)]] RWTexture2D<float4> outImage;
-[[vk::binding(2)]] Sampler2D textures[];
+[[vk::binding(0, 0)]] Sampler2D textures[];
+[[vk::binding(0, 1)]] RaytracingAccelerationStructure tlas;
+[[vk::binding(1, 1)]] RWTexture2D<float4> outImage;
 
 struct HitPayload {
 	float3 color;
 	float weight;
 	int depth;
+};
+
+struct ShadowPayload {
+    int depth;
 };
 
 struct TriangleAttributes<T> {
@@ -41,8 +45,29 @@ T getInterpolatedAttribute<T : IFloat>(Mesh mesh, uint triangleIndex, uint offse
 
 float3 getInterpolatedDec3nAttribute(Mesh mesh, uint triangleIndex, uint offset, float3 barycentrics) {
 	TriangleAttributes<int8_t4> attrs = getTriangleAttributes<int8_t4>(mesh, triangleIndex, offset);
-	
-	return float3(barycentrics.x) * float3(attrs.v0.xyz) / 511.0 + float3(barycentrics.y) * float3(attrs.v1.xyz) / 511.0 + float3(barycentrics.z) * float3(attrs.v2.xyz) / 511.0;
+
+    return float3(barycentrics.x) * float3(attrs.v0.xyz) / 511.0 + float3(barycentrics.y) * float3(attrs.v1.xyz) / 511.0 + float3(barycentrics.z) * float3(attrs.v2.xyz) / 511.0;
+}
+
+float2 getInterpolatedHalf2Attribute(Mesh mesh, uint triangleIndex, uint offset, float3 barycentrics) {
+    TriangleAttributes<half2> attrs = getTriangleAttributes<half2>(mesh, triangleIndex, offset);
+
+    return float2(barycentrics.x) * float2(attrs.v0) + float2(barycentrics.y) * float2(attrs.v1) + float2(barycentrics.z) * float2(attrs.v2);
+}
+
+float testShadow(float3 worldPosition, float3 worldNormal, float3 lightDirection) {
+    RayDesc ray;
+    ray.Origin = worldPosition + worldNormal * 0.001;
+    ray.Direction = normalize(lightDirection);
+	ray.TMin = 0.001;
+	ray.TMax = INFINITE;
+
+    ShadowPayload payload;
+    payload.depth = 0;
+
+    TraceRay(tlas, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, 0xFF, 0, 0, 1, ray, payload);
+
+    return payload.depth != MISS_DEPTH ? 0.0 : 1.0;
 }
 
 [shader("raygeneration")]
@@ -77,24 +102,29 @@ void rgenMain() {
 
 [shader("closesthit")]
 void rchitMain(inout HitPayload payload, in BuiltInTriangleIntersectionAttributes attr) {
-	uint meshId = InstanceID();
+    uint modelId = InstanceID();
+    uint geometryId = GeometryIndex();
 	uint triangleId = PrimitiveIndex();
 
-	Mesh mesh = pushConst.meshes[meshId];
+    Model model = pushConst.models[modelId];
+    Mesh mesh = model.meshes[geometryId];
 	
 	float3 barycentrics = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
-	float3 pos = getInterpolatedAttribute<float3>(mesh, triangleId, mesh.vertexDataReflection.positionOffset, barycentrics);
+    float3 pos = getInterpolatedAttribute<float3>(mesh, triangleId, mesh.vertexDataReflection.positionOffset, barycentrics);
     float3 nrm = getInterpolatedDec3nAttribute(mesh, triangleId, mesh.vertexDataReflection.normalOffset, barycentrics);
-    half2 uv = getInterpolatedAttribute<half2>(mesh, triangleId, mesh.vertexDataReflection.uvOffset, barycentrics);
+    float3 tng = getInterpolatedDec3nAttribute(mesh, triangleId, mesh.vertexDataReflection.tangentOffset, barycentrics);
+    float3 bin = getInterpolatedDec3nAttribute(mesh, triangleId, mesh.vertexDataReflection.binormalOffset, barycentrics);
+    float2 uv = getInterpolatedHalf2Attribute(mesh, triangleId, mesh.vertexDataReflection.uvOffset, barycentrics);
+    float2 uv2 = getInterpolatedHalf2Attribute(mesh, triangleId, mesh.vertexDataReflection.uv2Offset, barycentrics);
 	
-	float3 worldPos = float3(mul(float4(pos, 1.0), ObjectToWorld4x3()));
-	//float3 worldNormal = normalize(mul(WorldToObject4x3(), nrm).xyz);
-	float3 worldNormal = normalize(mul(float4(nrm, 0.0), ObjectToWorld4x3()).xyz);
-	float distance = length(normalize(worldPos));
+	float3 worldPosition = float3(mul(float4(pos, 1.0), ObjectToWorld4x3()));
+    float3 worldNormal = normalize(mul(float4(nrm, 0.0), ObjectToWorld4x3()).xyz);
+    float3 worldTangent = normalize(mul(float4(tng, 0.0), ObjectToWorld4x3()).xyz);
+    float3 worldBinormal = normalize(mul(float4(bin, 0.0), ObjectToWorld4x3()).xyz);
+	float distance = length(normalize(worldPosition));
 
-	float3 N = normalize(worldNormal); // Surface normal
-	float3 V = -WorldRayDirection(); // View direction (towards camera)
-	float3 L = normalize(float3(1.0f, 1.0f, 1.0f)); // Light direction
+	float3 viewDirection = -WorldRayDirection();
+	float3 lightDirection = normalize(float3(1.0f, 1.0f, 1.0f));
 
     uint materialId = mesh.materialId;
 
@@ -103,18 +133,19 @@ void rchitMain(inout HitPayload payload, in BuiltInTriangleIntersectionAttribute
     MaterialShaderPayload materialShaderPayload;
     materialShaderPayload.materialId = materialId;
     materialShaderPayload.weight = 1.0f;
-    materialShaderPayload.uv = float2(uv);
-    materialShaderPayload.position = worldPos;
-    materialShaderPayload.normal = N;
-    materialShaderPayload.lightDirection = L;
-    materialShaderPayload.viewDirection = V;
+    materialShaderPayload.hit.world_position = worldPosition;
+    materialShaderPayload.hit.light_direction = lightDirection;
+    materialShaderPayload.hit.light_color = float3(1.0, 1.0, 1.0);
+    materialShaderPayload.hit.view_direction = viewDirection;
+    materialShaderPayload.hit.shadow = testShadow(worldPosition, worldNormal, lightDirection);
+    materialShaderPayload.surface.basis.normal = normalize(worldNormal);
+    materialShaderPayload.surface.basis.tangent = normalize(worldTangent);
+    materialShaderPayload.surface.basis.binormal = normalize(worldBinormal);
+    materialShaderPayload.surface.uv = uv;
+    materialShaderPayload.surface.uv2 = uv2;
 
     CallShader<MaterialShaderPayload>(material.shaderId, materialShaderPayload);
 
-    // // float3 color = pbrMetallicRoughness(albedo, metallic, roughness, N, V, L);
-    // float diffuse = max(dot(L, N), 0.0);
-    // diffuse = diffuse * (1.0 / (1.0 + 0.25 * distance * distance));
-    //
     payload.color = materialShaderPayload.color;
 }
 
@@ -122,4 +153,9 @@ void rchitMain(inout HitPayload payload, in BuiltInTriangleIntersectionAttribute
 void rmissMain(inout HitPayload payload) {
 	payload.color = float3(0.0, 0.0, 0.0);
 	payload.depth = MISS_DEPTH;
+}
+
+[shader("miss")]
+void rmissShadowMain(inout ShadowPayload payload) {
+    payload.depth = MISS_DEPTH;
 }

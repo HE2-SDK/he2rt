@@ -1,10 +1,10 @@
 #pragma once
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
-#define VMA_DEBUG_LOG_FORMAT(format, ...) do { \
-       printf((format), __VA_ARGS__); \
-       printf("\n"); \
-   } while(false)
+//#define VMA_DEBUG_LOG_FORMAT(format, ...) do { \
+//       printf((format), __VA_ARGS__); \
+//       printf("\n"); \
+//   } while(false)
 #include <vk_mem_alloc.hpp>
 #include <vk_mem_alloc_raii.hpp>
 
