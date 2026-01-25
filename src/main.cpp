@@ -65,7 +65,7 @@ bool done{};
 float lastX = 1920 / 2, lastY = 1080 / 2;
 float sens = 0.005f;
 float moveSensSlow = 0.001f;
-float moveSens = 0.2f;
+float moveSens = 1.0f;
 void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
     if (!done) {
         lastX = xpos;
@@ -309,6 +309,8 @@ int main(void) {
             auto imageIndex = swapchain.swapchain.acquireNextImage(UINT64_MAX, acquireSemaphore).value;
 
             auto submitSemaphore = vk::Semaphore{ swapchain.imageReadySemaphores[imageIndex] };
+
+            engine.globalPushConstant.frame = imageIndex;
 
             commandBuffer.reset();
             commandBuffer.begin({ vk::CommandBufferUsageFlags{} });

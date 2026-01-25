@@ -29,5 +29,16 @@ void main(inout MaterialShaderPayload payload) {
 
     //payload.color = float3(params.diffuse, params.specular, params.normal) / float3(30.0f);
 
-    payload.color = EvaluateMaterial(lightingParams);
+    payload.contribution = float3(0.0f, 0.0f, 0.0f);
+
+    if (dot(lightingParams.hit.light_direction, lightingParams.world_normal) > 0.0f) {
+        BSDFEvaluationResult sunlight = EvaluateMaterial(lightingParams);
+        payload.contribution += sunlight.color;
+    }
+
+    payload.nextDirection = SampleMaterial(lightingParams, payload.randomness);
+    lightingParams.hit.light_direction = payload.nextDirection;
+
+    BSDFEvaluationResult sampled = EvaluateMaterial(lightingParams);
+    payload.throughput = sampled.color / sampled.pdf;
 }

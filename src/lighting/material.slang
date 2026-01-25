@@ -21,7 +21,14 @@ void LoadPRMTexture(inout MaterialParameters parameters, float4 prm) {
     LoadPRM(parameters, prm);
 }
 
-float3 EvaluateMaterial(LightingParameters parameters) {
+float SpecularProbability(LightingParameters parameters) {
+    float f0 = lerp(parameters.material.specular, 1.0f, parameters.material.metallic);
+    float NdotV = saturate(dot(parameters.hit.view_direction, parameters.world_normal));
+
+    return lerp(FresnelSchlick(f0, NdotV), 1.0f, parameters.material.metallic);
+}
+
+BSDFEvaluationResult EvaluateMaterial(LightingParameters parameters) {
     BSDFEvaluationContext ctx = BSDFEvaluationContext(parameters);
 
     BSDFEvaluationResult sunlight_diffuse = EvaluateDiffuseBSDF(ctx);
@@ -29,12 +36,19 @@ float3 EvaluateMaterial(LightingParameters parameters) {
 
     float3 radiance = max(0.0, sunlight_diffuse.color) + max(0.0, sunlight_specular.color);
 
-    return radiance * parameters.hit.light_color * parameters.hit.shadow;
+    return {
+        radiance * parameters.hit.light_color,
+        lerp(sunlight_diffuse.pdf, sunlight_specular.pdf, SpecularProbability(parameters)),
+    };
 }
 
-//float3 SampleMaterial(LightingParameters parameters, float3 randomness) {
-//    BSDFSamplingContext ctx = BSDFSamplingContext(parameters, randomness.xy);
-//
-//    if (randomness.z <= 
-//
-//}
+float3 SampleMaterial(LightingParameters parameters, float3 randomness) {
+    BSDFSamplingContext ctx = BSDFSamplingContext(parameters, randomness.xy);
+
+    if (randomness.z > SpecularProbability(parameters)) {
+        return SampleDiffuseBSDF(ctx);
+    }
+    else {
+        return SampleSpecularBSDF(ctx);
+    }
+}

@@ -29,6 +29,7 @@ namespace he2rt {
             vk::KHRAccelerationStructureExtensionName,
             vk::KHRRayTracingPipelineExtensionName,
             vk::KHRDeferredHostOperationsExtensionName,
+            vk::NVRayTracingInvocationReorderExtensionName,
             vk::NVDeviceDiagnosticCheckpointsExtensionName,
             vk::NVDeviceDiagnosticsConfigExtensionName,
         };
@@ -40,7 +41,8 @@ namespace he2rt {
             vk::PhysicalDeviceVulkan13Features,
             vk::PhysicalDeviceVulkan14Features,
             vk::PhysicalDeviceAccelerationStructureFeaturesKHR,
-            vk::PhysicalDeviceRayTracingPipelineFeaturesKHR
+            vk::PhysicalDeviceRayTracingPipelineFeaturesKHR,
+            vk::PhysicalDeviceRayTracingInvocationReorderFeaturesNV
         >();
 
         auto createInfoChain = vk::StructureChain{
@@ -57,6 +59,7 @@ namespace he2rt {
             features2.get<vk::PhysicalDeviceVulkan14Features>(),
             features2.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>(),
             features2.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>(),
+            features2.get<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesNV>(),
             vk::DeviceDiagnosticsConfigCreateInfoNV{
                 vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableAutomaticCheckpoints | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableResourceTracking | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableShaderDebugInfo | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableShaderErrorReporting
             },

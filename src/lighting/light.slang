@@ -7,7 +7,6 @@ struct HitParameters {
     float3 view_direction;
     float3 light_direction;
     float3 light_color;
-    float shadow;
 };
 
 struct MaterialParameters {

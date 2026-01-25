@@ -3,6 +3,11 @@
 
 static const float INFINITE = 1e32F;
 
+struct PathTracingState {
+    float3 radiance = float3(0.0f, 0.0f, 0.0f);
+    float3 throughput = float3(1.0f, 1.0f, 1.0f);
+};
+
 struct SurfaceParameters {
     Basis basis;
     float2 uv;
@@ -11,9 +16,10 @@ struct SurfaceParameters {
 
 struct MaterialShaderPayload {
     uint32_t materialId;
-    RayDesc ray;
-    float weight;
-    float3 color;
     HitParameters hit;
     SurfaceParameters surface;
+    float3 randomness;
+    float3 contribution;
+    float3 throughput;
+    float3 nextDirection;
 };

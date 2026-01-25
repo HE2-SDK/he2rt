@@ -36,5 +36,6 @@ namespace he2rt::shaders {
 		shaders::Material* materials = nullptr;
 		float4x4 viewInverse;
 		float4x4 projInverse;
+		uint32_t frame;
 	};
 }
