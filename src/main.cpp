@@ -310,8 +310,6 @@ int main(void) {
 
             auto submitSemaphore = vk::Semaphore{ swapchain.imageReadySemaphores[imageIndex] };
 
-            engine.globalPushConstant.frame = imageIndex;
-
             commandBuffer.reset();
             commandBuffer.begin({ vk::CommandBufferUsageFlags{} });
 

@@ -37,18 +37,18 @@ BSDFEvaluationResult EvaluateMaterial(LightingParameters parameters) {
     float3 radiance = max(0.0, sunlight_diffuse.color) + max(0.0, sunlight_specular.color);
 
     return {
-        radiance * parameters.hit.light_color,
-        lerp(sunlight_diffuse.pdf, sunlight_specular.pdf, SpecularProbability(parameters)),
+        max(0.0, sunlight_diffuse.color) * parameters.hit.light_color, // radiance * parameters.hit.light_color,
+        sunlight_diffuse.pdf,//lerp(sunlight_diffuse.pdf, sunlight_specular.pdf, SpecularProbability(parameters)),
     };
 }
 
 float3 SampleMaterial(LightingParameters parameters, float3 randomness) {
     BSDFSamplingContext ctx = BSDFSamplingContext(parameters, randomness.xy);
 
-    if (randomness.z > SpecularProbability(parameters)) {
+    //if (randomness.z > SpecularProbability(parameters)) {
         return SampleDiffuseBSDF(ctx);
-    }
-    else {
-        return SampleSpecularBSDF(ctx);
-    }
+    //}
+    //else {
+    //    return SampleSpecularBSDF(ctx);
+    //}
 }

@@ -5,6 +5,7 @@
 #include "acceleration-structures.h"
 #include "device.h"
 #include "scene.h"
+#include "math.h"
 
 namespace he2rt {
 	class RaytracingEngine {
@@ -30,6 +31,8 @@ namespace he2rt {
 		vk::raii::PipelineLayout createPipelineLayout();
 		vk::raii::Pipeline createPipeline();
 		Buffer createSBTBuffer();
+
+		Eigen::Affine3f lastViewMatrix{};
 
 	public:
 		shaders::PushConstant globalPushConstant{};

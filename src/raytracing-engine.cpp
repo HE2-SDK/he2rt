@@ -170,6 +170,11 @@ namespace he2rt {
     }
 
     void RaytracingEngine::raytrace(vk::CommandBuffer& cmd, vk::ImageView& outputImage, const vk::Extent2D& viewport, const Eigen::Affine3f& viewMatrix) {
+        if (viewMatrix.matrix() != lastViewMatrix.matrix()) {
+            globalPushConstant.frame = 0;
+        }
+
+        lastViewMatrix = viewMatrix;
         globalPushConstant.viewInverse = viewMatrix.inverse().matrix();
 
         cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, pipeline);
@@ -199,5 +204,7 @@ namespace he2rt {
             vk::MemoryBarrier2{ vk::PipelineStageFlagBits2::eRayTracingShaderKHR, vk::AccessFlagBits2::eShaderWrite, vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderRead }
         } };
         cmd.pipelineBarrier2({ {}, memoryBarriers });
+
+        globalPushConstant.frame++;
     }
 }

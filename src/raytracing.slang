@@ -168,10 +168,11 @@ float3 pathTrace(RayDesc ray, inout uint seed) {
 
             CallShader<MaterialShaderPayload>(material.shaderId, materialShaderPayload);
 
-            materialShaderPayload.contribution *= state.throughput;
+            if (!testShadowSER(hitParameters.world_position, surfaceParameters.basis.normal, hitParameters.light_direction)) {
+                state.radiance += materialShaderPayload.contribution * state.throughput;
+            }
+
             state.throughput *= materialShaderPayload.throughput;
-            ray.Origin = offsetRay(hitParameters.world_position, surfaceParameters.basis.normal);
-            ray.Direction = materialShaderPayload.nextDirection;
 
             // Russian roulette
             float rrPcont = min(max(state.throughput.x, max(state.throughput.y, state.throughput.z)) + 0.001F, 0.95F);
@@ -179,9 +180,8 @@ float3 pathTrace(RayDesc ray, inout uint seed) {
                 break;
             state.throughput /= rrPcont;
 
-            if (!testShadowSER(hitParameters.world_position, surfaceParameters.basis.normal, hitParameters.light_direction)) {
-                state.radiance += materialShaderPayload.contribution;
-            }
+            ray.Origin = offsetRay(hitParameters.world_position, surfaceParameters.basis.normal);
+            ray.Direction = materialShaderPayload.nextDirection;
         }
     }
 
@@ -215,11 +215,20 @@ void rgenMain() {
 
     float3 color = float3(0.0f, 0.0f, 0.0f);
 
-    for (uint i = 0; i < 8; i++) {
+    for (uint i = 0; i < 4; i++) {
         color += pathTracePixel(seed);
     }
 
-	outImage[int2(launchID)] = float4(color / 8, 1.0);
+    color /= 4;
+
+    if (pushConst.frame > 0) {
+        float a = 1.0f / float(pushConst.frame + 1);
+        float3 old_color = outImage[int2(launchID)].xyz;
+        outImage[int2(launchID)] = float4(lerp(old_color, color, a), 1.f);
+    }
+    else {
+        outImage[int2(launchID)] = float4(color, 1.f);
+    }
 }
 
 [shader("closesthit")]

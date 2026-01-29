@@ -49,21 +49,25 @@ foreach(source IN LISTS SHADERS)
   add_custom_command(
     COMMAND
       "C:/VulkanSDK/1.4.335.0/Bin/slangc.exe"
+      -depfile ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.dep
       -o ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv
       ${CMAKE_CURRENT_SOURCE_DIR}/${source}
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.dep
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${source}
+    DEPFILE ${FILENAME}.spv.dep
     COMMENT "Compiling ${FILENAME}"
   )
   add_custom_command(
     COMMAND
       "C:/VulkanSDK/1.4.335.0/Bin/slangc.exe"
+      -depfile ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h.dep
       -source-embed-style u32
       -source-embed-name ${BASENAME}_shader
       -o ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv
       ${CMAKE_CURRENT_SOURCE_DIR}/${source}
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h.dep
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${source}
+    DEPFILE ${FILENAME}.spv.h.dep
     COMMENT "Compiling ${FILENAME} embedded version"
   )
   list(APPEND SPV_SHADERS ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h)
