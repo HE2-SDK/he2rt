@@ -5,11 +5,6 @@
 
 using namespace he2rt::shaders;
 
-[[vk::push_constant]] ConstantBuffer<PushConstant> pushConst;
-[[vk::binding(0, 0)]] Sampler2D textures[];
-[[vk::binding(0, 1)]] RaytracingAccelerationStructure tlas;
-[[vk::binding(1, 1)]] RWTexture2D<float4> outImage;
-
 struct HitPayload {
 	float3 color;
 	float weight;
@@ -71,21 +66,6 @@ bool testShadowSER(float3 worldPosition, float3 worldNormal, float3 lightDirecti
     return hit.IsHit();
 }
 
-float testShadow(float3 worldPosition, float3 worldNormal, float3 lightDirection) {
-    RayDesc ray;
-    ray.Origin = worldPosition + worldNormal * 0.001;
-    ray.Direction = normalize(lightDirection);
-	ray.TMin = 0.001;
-	ray.TMax = INFINITE;
-
-    ShadowPayload payload;
-    payload.depth = 0;
-
-    TraceRay(tlas, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, 0xFF, 0, 0, 1, ray, payload);
-
-    return payload.depth != MISS_DEPTH ? 0.0 : 1.0;
-}
-
 HitParameters collectHitParameters(Mesh mesh, uint triangleId, float3 worldRayDirection, float3 barycentrics) {
     float3 pos = getInterpolatedAttribute<float3>(mesh, triangleId, mesh.vertexDataReflection.positionOffset, barycentrics);
     float3 viewDirection = -worldRayDirection;
@@ -142,47 +122,46 @@ float3 pathTrace(RayDesc ray, inout uint seed) {
         HitObject hit = HitObject::TraceRay(tlas, RAY_FLAG_NONE, 0xff, 0, 0, 0, ray, payload);
 
         if (!hit.IsHit()) {
-            return state.radiance;
+            break;
         }
-        else {
-            BuiltInTriangleIntersectionAttributes attr = hit.GetAttributes<BuiltInTriangleIntersectionAttributes>();
-            uint modelId = hit.GetInstanceID();
-            uint geometryId = hit.GetGeometryIndex();
-            uint triangleId = hit.GetPrimitiveIndex();
-            float4x3 objToWorld = hit.GetObjectToWorld();
 
-            Model model = pushConst.models[modelId];
-            Mesh mesh = model.meshes[geometryId];
+        BuiltInTriangleIntersectionAttributes attr = hit.GetAttributes<BuiltInTriangleIntersectionAttributes>();
+        uint modelId = hit.GetInstanceID();
+        uint geometryId = hit.GetGeometryIndex();
+        uint triangleId = hit.GetPrimitiveIndex();
+        float4x3 objToWorld = hit.GetObjectToWorld();
 
-            // Collect some basic information
-            float3 barycentrics = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
-            HitParameters hitParameters = collectHitParameters(mesh, triangleId, ray.Direction, barycentrics);
-            SurfaceParameters surfaceParameters = collectSurfaceParameters(mesh, triangleId, objToWorld, barycentrics);
+        Model model = pushConst.models[modelId];
+        Mesh mesh = model.meshes[geometryId];
 
-            // Look up the material
-            uint materialId = mesh.materialId;
-            Material material = pushConst.materials[materialId];
+        // Collect some basic information
+        float3 barycentrics = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
+        HitParameters hitParameters = collectHitParameters(mesh, triangleId, ray.Direction, barycentrics);
+        SurfaceParameters surfaceParameters = collectSurfaceParameters(mesh, triangleId, objToWorld, barycentrics);
 
-            // Call the material shader
-            MaterialShaderPayload materialShaderPayload = { materialId, hitParameters, surfaceParameters, float3(rand(seed), rand(seed), rand(seed)) };
+        // Look up the material
+        uint materialId = mesh.materialId;
+        Material material = pushConst.materials[materialId];
 
-            CallShader<MaterialShaderPayload>(material.shaderId, materialShaderPayload);
+        // Call the material shader
+        MaterialShaderPayload materialShaderPayload = { materialId, hitParameters, surfaceParameters, float3(rand(seed), rand(seed), rand(seed)) };
 
-            if (!testShadowSER(hitParameters.world_position, surfaceParameters.basis.normal, hitParameters.light_direction)) {
-                state.radiance += materialShaderPayload.contribution * state.throughput;
-            }
+        CallShader<MaterialShaderPayload>(material.shaderId, materialShaderPayload);
 
-            state.throughput *= materialShaderPayload.throughput;
-
-            // Russian roulette
-            float rrPcont = min(max(state.throughput.x, max(state.throughput.y, state.throughput.z)) + 0.001F, 0.95F);
-            if (rand(seed) >= rrPcont)
-                break;
-            state.throughput /= rrPcont;
-
-            ray.Origin = offsetRay(hitParameters.world_position, surfaceParameters.basis.normal);
-            ray.Direction = materialShaderPayload.nextDirection;
+        if (!testShadowSER(hitParameters.world_position, surfaceParameters.basis.normal, hitParameters.light_direction)) {
+            state.radiance += materialShaderPayload.contribution * state.throughput;
         }
+
+        state.throughput *= materialShaderPayload.throughput;
+
+        // Russian roulette
+        float rrPcont = min(max(state.throughput.x, max(state.throughput.y, state.throughput.z)) + 0.001F, 0.95F);
+        if (rand(seed) >= rrPcont)
+            break;
+        state.throughput /= rrPcont;
+
+        ray.Origin = offsetRay(hitParameters.world_position, surfaceParameters.basis.normal);
+        ray.Direction = materialShaderPayload.nextDirection;
     }
 
     return state.radiance;
@@ -215,11 +194,11 @@ void rgenMain() {
 
     float3 color = float3(0.0f, 0.0f, 0.0f);
 
-    for (uint i = 0; i < 4; i++) {
+    for (uint i = 0; i < 8; i++) {
         color += pathTracePixel(seed);
     }
 
-    color /= 4;
+    color /= 8;
 
     if (pushConst.frame > 0) {
         float a = 1.0f / float(pushConst.frame + 1);

@@ -1,0 +1,5 @@
+set(IMGUI_BUILD_BACKEND_GLFW ON)
+set(IMGUI_BUILD_BACKEND_VULKAN ON)
+set(IMGUI_DEMO_WINDOW ON)
+
+add_subdirectory(imgui)

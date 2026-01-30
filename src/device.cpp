@@ -37,7 +37,7 @@ namespace he2rt {
             description.surfaceFormat.colorSpace,
             description.extent,
             1,
-            vk::ImageUsageFlagBits::eTransferDst, //vk::ImageUsageFlagBits::eColorAttachment,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eColorAttachment,
             sameQueue ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
             sameQueue ? (uint32_t)queueIndices.size() : 0,
             sameQueue ? queueIndices.data() : nullptr,

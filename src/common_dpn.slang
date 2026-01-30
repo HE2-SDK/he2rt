@@ -4,9 +4,6 @@
 
 using namespace he2rt::shaders;
 
-[[vk::push_constant]] ConstantBuffer<PushConstant> pushConst;
-[[vk::binding(0, 0)]] Sampler2D textures[];
-
 struct Parameters {
 	uint32_t diffuseTextureId;
 	uint32_t specularTextureId;
@@ -40,5 +37,7 @@ void main(inout MaterialShaderPayload payload) {
     lightingParams.hit.light_direction = payload.nextDirection;
 
     BSDFEvaluationResult sampled = EvaluateMaterial(lightingParams);
-    payload.throughput = sampled.color / sampled.pdf;
+
+    float3 throughput = sampled.color / sampled.pdf;
+    payload.throughput = any(isnan(throughput)) || sampled.pdf < 0.0001f ? 0.0f : throughput;
 }

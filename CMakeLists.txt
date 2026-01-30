@@ -36,6 +36,8 @@ option(DEVTOOLS_INSTALL_TO_GAME_FOLDER "Install to game folder" ON)
 option(DEVTOOLS_INSTALL_TO_UPDATE_SERVER "Install to update server" OFF)
 set(DEVTOOLS_UPDATE_SERVER_PATH "" CACHE PATH "Path to update server")
 
+add_subdirectory(vendor EXCLUDE_FROM_ALL)
+
 #add_subdirectory(shaders)
 set(SHADERS
     src/raytracing.slang
@@ -76,7 +78,7 @@ endforeach()
 add_executable(he2-rt ${SPV_SHADERS})
 target_include_directories(he2-rt PRIVATE "C:/VulkanSDK/1.4.335.0/Include" "C:/Program Files/NVIDIA Corporation/Nsight Graphics 2025.5.0/SDKs/NsightAftermathSDK/2025.5.0.251114/include" ${CMAKE_CURRENT_BINARY_DIR})
 target_link_directories(he2-rt PRIVATE "C:/VulkanSDK/1.4.335.0/Lib" "C:/Program Files/NVIDIA Corporation/Nsight Graphics 2025.5.0/SDKs/NsightAftermathSDK/2025.5.0.251114/lib/x64")
-target_link_libraries(he2-rt PRIVATE vulkan-1 GFSDK_Aftermath_Lib.x64 glfw EnTT::EnTT VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp Eigen3::Eigen rip-hl dds_image)
+target_link_libraries(he2-rt PRIVATE vulkan-1 GFSDK_Aftermath_Lib.x64 glfw EnTT::EnTT VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp Eigen3::Eigen rip-hl dds_image imgui-backend-glfw imgui-backend-vulkan)
 target_compile_features(he2-rt PRIVATE cxx_std_20)
 target_compile_definitions(he2-rt PRIVATE
     VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1

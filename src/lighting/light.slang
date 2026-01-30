@@ -117,7 +117,7 @@ float hvd_ggx_eval(const float2 invRoughness,
     const float aniso = x * x + y * y;
     const float f = aniso + h.z * h.z;
 
-    return PiRecip * invRoughness.x * invRoughness.y / (f * f);
+    return PiRecip * invRoughness.x * invRoughness.y * h.z / (f * f);
 }
 
 float3 hvd_ggx_sample_vndf(float3 k, float2 roughness, float2 xi) {
@@ -241,6 +241,10 @@ BSDFEvaluationResult EvaluateDiffuseBSDF(BSDFEvaluationContext ctx) {
 BSDFEvaluationResult EvaluateSpecularBSDF(BSDFEvaluationContext ctx, bool enable_anisotropy) {
     float cos_halfway_normal = saturate(dot(ctx.halfway_direction, ctx.parameters.world_normal));
 
+    if (cos_halfway_normal == 0.0f || ctx.cos_light_normal == 0.0f || ctx.cos_view_normal == 0.0f || ctx.cos_halfway_light == 0.0f) {
+        return { float3(0.0f, 0.0f, 0.0f), 0.0f };
+    }
+
     Basis local_basis = OrthonormalBasis(ctx.parameters.world_normal);
 
     float3 localH = ConvertToBasis(local_basis, ctx.halfway_direction);
@@ -250,7 +254,7 @@ BSDFEvaluationResult EvaluateSpecularBSDF(BSDFEvaluationContext ctx, bool enable
     float D = hvd_ggx_eval(1.0f / ctx.parameters.material.roughness, localH);
     float G1 = 0.0f, G2 = 0.0f;
     ggx_smith_shadow_mask(G1, G2, localV, localL, ctx.parameters.material.roughness);
-    float pdf = G1 * D * 0.25f / ctx.cos_view_normal;
+    float pdf = G1 * D * 0.25f / (ctx.cos_view_normal * cos_halfway_normal);
 
     return {
         ctx.fresnel_color * G2 * pdf,

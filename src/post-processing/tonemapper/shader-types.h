@@ -51,6 +51,6 @@ namespace he2rt::shaders::tonemapper {
 		float centerMeteringSize = 0.5F;   // Size of the center metering area (0.0 to 1.0, where 1.0 is the full screen)
 		uint32_t averageMode = 1;      // 0 = Mean, 1 = Median
 		// Dither
-		int dither = 1;  // 0: no dither, 1: dither
+		int dither = 0;  // 0: no dither, 1: dither
 	};
 }

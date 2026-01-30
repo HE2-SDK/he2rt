@@ -11,6 +11,9 @@
 #include "gpu-crash-tracker.h"
 #include "common_dpn.slang.spv.h"
 #include <filesystem>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
@@ -211,6 +214,7 @@ int main(void) {
         }
 
         scene.addModelInstance("chr_sonic", Eigen::Affine3f{ Eigen::Translation3f{ 0.0f, 0.0f, 0.0f } });
+        //scene.addModelInstance("cmnisl_obj_airwall02_A", Eigen::Affine3f{ Eigen::Translation3f{ 2.0f, 0.0f, 0.0f } });
 
         scene.finalize();
 
@@ -274,6 +278,29 @@ int main(void) {
             commandBuffers.emplace_back(std::move(device.device.allocateCommandBuffers({ commandPool, vk::CommandBufferLevel::ePrimary, 1 })[0]));
         }
 
+        std::array<vk::Format, 1> colorAttachmentFormats{ { swapchain.description.surfaceFormat.format } };
+
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGuiIO& io = ImGui::GetIO();
+        ImGui_ImplGlfw_InitForVulkan(window, true);
+        ImGui_ImplVulkan_InitInfo init_info{};
+        init_info.Instance = vk::Instance{ instance.instance };
+        init_info.PhysicalDevice = vk::PhysicalDevice{ physicalDevice.physicalDevice };
+        init_info.Device = vk::Device{ device.device };
+        init_info.QueueFamily = device.physicalDevice.queueIndices.graphics;
+        init_info.Queue = vk::Queue{ device.queues.graphics };
+        init_info.DescriptorPoolSize = 32;
+        init_info.MinImageCount = 2;
+        init_info.ImageCount = 2;
+        init_info.UseDynamicRendering = true;
+        init_info.PipelineInfoMain.PipelineRenderingCreateInfo = vk::PipelineRenderingCreateInfo{ {}, colorAttachmentFormats };
+        //init_info.PipelineInfoMain.RenderPass = wd->RenderPass;
+        //init_info.PipelineInfoMain.Subpass = 0;
+        //init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+        //init_info.CheckVkResultFn = check_vk_result;
+        ImGui_ImplVulkan_Init(&init_info);
+
         RaytracingEngine engine{ device, scene };
         shaders::tonemapper::Tonemapper tonemapper{ device };
 
@@ -287,6 +314,9 @@ int main(void) {
         glfwSetCursorPosCallback(window, mouseCallback);
         glfwSetKeyCallback(window, keyCallback);
 
+        std::chrono::high_resolution_clock clock{};
+        std::vector<std::chrono::time_point<std::chrono::high_resolution_clock>> frameStarts(inFlightFrameCount);
+
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
 
@@ -299,6 +329,10 @@ int main(void) {
             if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
                 camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * -Eigen::Vector3f::UnitX();
 
+            ImGui_ImplVulkan_NewFrame();
+            ImGui_ImplGlfw_NewFrame();
+            ImGui::NewFrame();
+
             auto frameFence = vk::Fence{ frameFences[currentFrame] };
             auto acquireSemaphore = vk::Semaphore{ acquireSemaphores[currentFrame] };
             auto commandBuffer = vk::CommandBuffer{ commandBuffers[currentFrame] };
@@ -307,6 +341,10 @@ int main(void) {
             device.device.resetFences({ frameFence });
 
             auto imageIndex = swapchain.swapchain.acquireNextImage(UINT64_MAX, acquireSemaphore).value;
+
+            std::chrono::time_point<std::chrono::high_resolution_clock> frameStart{ clock.now() };
+            auto frameTime = frameStart - frameStarts[currentFrame];
+            frameStarts[currentFrame] = frameStart;
 
             auto submitSemaphore = vk::Semaphore{ swapchain.imageReadySemaphores[imageIndex] };
 
@@ -345,6 +383,18 @@ int main(void) {
                 { swapchain.description.extent.width, swapchain.description.extent.height, 1 },
             };
             commandBuffer.copyImage2({ tonemappedGbuffer.image.image, vk::ImageLayout::eGeneral, swapchain.images[imageIndex], vk::ImageLayout::eGeneral, { copyRegion } });
+            vk::Rect2D renderArea{ { 0, 0 }, swapchain.description.extent };
+            std::array<vk::RenderingAttachmentInfo, 1> colorAttachments{ {
+                { swapchain.imageViews[imageIndex], vk::ImageLayout::eGeneral}
+            } };
+            commandBuffer.beginRendering({ {}, renderArea, 1, 0, colorAttachments });
+
+            auto frameTimeF = static_cast<float>(frameTime.count()) / static_cast<float>(inFlightFrameCount);
+            ImGui::Text("Frame Time: %f", frameTimeF / 1.0e6f);
+            ImGui::Text("FPS: %f", 1.0e9f / frameTimeF);
+            ImGui::Render();
+            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+            commandBuffer.endRendering();
             std::array<vk::ImageMemoryBarrier2, 1> imageBarrierAfterSwapchainCopy{ {
                 {
                     vk::PipelineStageFlagBits2::eTransfer,
@@ -376,6 +426,10 @@ int main(void) {
         }
 
         device.device.waitIdle();
+
+        ImGui_ImplVulkan_Shutdown();
+        ImGui_ImplGlfw_Shutdown();
+        ImGui::DestroyContext();
     }
 
     glfwDestroyWindow(window);

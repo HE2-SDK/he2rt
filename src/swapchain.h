@@ -15,7 +15,7 @@ namespace he2rt {
 
 	class Swapchain {
         Device& device;
-        //std::vector<vk::raii::ImageView> createImageViews();
+        std::vector<vk::raii::ImageView> createImageViews();
         std::vector<vk::raii::Semaphore> createImageReadySemaphores();
     public:
         vk::raii::SwapchainKHR swapchain;
