@@ -42,6 +42,8 @@ add_subdirectory(vendor EXCLUDE_FROM_ALL)
 set(SHADERS
     src/raytracing.slang
     src/common_dpn.slang
+    src/Iridescence_ddpNrEa.slang
+    src/IridescenceStone_ddpNrEa.slang
     src/post-processing/tonemapper/tonemapper.slang
 )
 

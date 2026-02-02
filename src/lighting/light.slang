@@ -68,6 +68,14 @@ struct LightingParameters {
 //	result = SampleTextureLevel(s_Common_CDRF, float3(t, ctx.sss_param.xy), 0).xyz;
 //}
 
+//float ShlickFresnelFactor(float cos_theta, float power = 5.0) {
+//    return pow(1.0 - cos_theta, power);
+//}
+//
+//__generic<int N> vector<float, N> FresnelSchlick(vector<float, N> f0, float cos_theta, vector<float, N> f90 = saturate(dot(f0, 16.5)), float power = 5.0) {
+//    return lerp(f0, f90, ShlickFresnelFactor(cos_theta, power));
+//}
+
 __generic<int N> vector<float, N> FresnelSchlick(vector<float, N> f0, float cos_theta) {
     float p = pow(1.0 - cos_theta, 5.0);
 	float f90 = saturate(dot(f0, 16.5));

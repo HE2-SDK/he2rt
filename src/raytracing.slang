@@ -39,6 +39,12 @@ T getInterpolatedAttribute<T : IFloat>(Mesh mesh, uint triangleIndex, uint offse
 	return T(barycentrics.x) * attrs.v0 + T(barycentrics.y) * attrs.v1 + T(barycentrics.z) * attrs.v2;
 }
 
+float4 getInterpolatedUByte4nAttribute(Mesh mesh, uint triangleIndex, uint offset, float3 barycentrics) {
+    TriangleAttributes<uint8_t4> attrs = getTriangleAttributes<uint8_t4>(mesh, triangleIndex, offset);
+
+    return float4(barycentrics.x) * float4(attrs.v0.xyzw) / 255.0 + float4(barycentrics.y) * float4(attrs.v1.xyzw) / 255.0 + float4(barycentrics.z) * float4(attrs.v2.xyzw) / 255.0;
+}
+
 float3 getInterpolatedDec3nAttribute(Mesh mesh, uint triangleIndex, uint offset, float3 barycentrics) {
 	TriangleAttributes<int8_t4> attrs = getTriangleAttributes<int8_t4>(mesh, triangleIndex, offset);
 
@@ -54,7 +60,7 @@ float2 getInterpolatedHalf2Attribute(Mesh mesh, uint triangleIndex, uint offset,
 bool testShadowSER(float3 worldPosition, float3 worldNormal, float3 lightDirection) {
     RayDesc ray;
     ray.Origin = worldPosition + worldNormal * 0.001;
-    ray.Direction = normalize(lightDirection);
+    ray.Direction = lightDirection;
     ray.TMin = 0.001;
     ray.TMax = INFINITE;
 
@@ -66,13 +72,13 @@ bool testShadowSER(float3 worldPosition, float3 worldNormal, float3 lightDirecti
     return hit.IsHit();
 }
 
-HitParameters collectHitParameters(Mesh mesh, uint triangleId, float3 worldRayDirection, float3 barycentrics) {
+HitParameters collectHitParameters(Mesh mesh, uint triangleId, float3 worldRayDirection, float4x3 objToWorld, float3 barycentrics) {
     float3 pos = getInterpolatedAttribute<float3>(mesh, triangleId, mesh.vertexDataReflection.positionOffset, barycentrics);
     float3 viewDirection = -worldRayDirection;
     float3 lightDirection = normalize(float3(1.0f, 1.0f, 1.0f));
 
     return {
-        pos,
+        float3(mul(float4(pos, 1.0f), objToWorld)),
         viewDirection,
         lightDirection,
         float3(1.0f, 1.0f, 1.0f),
@@ -85,6 +91,7 @@ SurfaceParameters collectSurfaceParameters(Mesh mesh, uint triangleId, float4x3 
     float3 bin = getInterpolatedDec3nAttribute(mesh, triangleId, mesh.vertexDataReflection.binormalOffset, barycentrics);
     float2 uv = getInterpolatedHalf2Attribute(mesh, triangleId, mesh.vertexDataReflection.uvOffset, barycentrics);
     float2 uv2 = getInterpolatedHalf2Attribute(mesh, triangleId, mesh.vertexDataReflection.uv2Offset, barycentrics);
+    float4 color = getInterpolatedUByte4nAttribute(mesh, triangleId, mesh.vertexDataReflection.colorOffset, barycentrics);
 
     return {
         normalize(mul(float4(nrm, 0.0), objToWorld).xyz),
@@ -92,6 +99,7 @@ SurfaceParameters collectSurfaceParameters(Mesh mesh, uint triangleId, float4x3 
         normalize(mul(float4(bin, 0.0), objToWorld).xyz),
         uv,
         uv2,
+        color,
     };
 }
 
@@ -113,7 +121,7 @@ float3 offsetRay(in float3 p, in float3 n)
 float3 pathTrace(RayDesc ray, inout uint seed) {
     PathTracingState state = {};
 
-    for (int depth = 0; depth < 8; depth++) {
+    for (int depth = 0; depth < 1; depth++) {
         HitPayload payload;
         payload.color = float3(0, 0, 0);
         payload.weight = 1;
@@ -122,6 +130,8 @@ float3 pathTrace(RayDesc ray, inout uint seed) {
         HitObject hit = HitObject::TraceRay(tlas, RAY_FLAG_NONE, 0xff, 0, 0, 0, ray, payload);
 
         if (!hit.IsHit()) {
+//            if (depth == 0)
+//                state.radiance = float3(0.0f, 1.0f, 0.0f);
             break;
         }
 
@@ -136,7 +146,7 @@ float3 pathTrace(RayDesc ray, inout uint seed) {
 
         // Collect some basic information
         float3 barycentrics = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
-        HitParameters hitParameters = collectHitParameters(mesh, triangleId, ray.Direction, barycentrics);
+        HitParameters hitParameters = collectHitParameters(mesh, triangleId, ray.Direction, objToWorld, barycentrics);
         SurfaceParameters surfaceParameters = collectSurfaceParameters(mesh, triangleId, objToWorld, barycentrics);
 
         // Look up the material
@@ -182,7 +192,15 @@ float3 pathTracePixel(inout uint seed) {
     ray.TMin = 0.001;
     ray.TMax = 100000.0;
 
-    return pathTrace(ray, seed);
+    float3 radiance = pathTrace(ray, seed);
+
+    float lum = dot(radiance, float3(0.212671F, 0.715160F, 0.072169F));
+    const float fireflyClampThreshold = 10.0f;
+    if (lum > fireflyClampThreshold) {
+        radiance *= fireflyClampThreshold / lum;
+    }
+
+    return radiance;
 }
 
 [shader("raygeneration")]
@@ -190,7 +208,7 @@ void rgenMain() {
 	float2 launchID = (float2)DispatchRaysIndex().xy;
     float2 launchSize = (float2)DispatchRaysDimensions().xy;
 
-    uint seed = xxhash32(uint3(uint2(launchID.xy), pushConst.frame));
+    uint seed = xxhash32(uint3(uint2(launchID.xy), pushConst.totalFrame));
 
     float3 color = float3(0.0f, 0.0f, 0.0f);
 

@@ -10,6 +10,8 @@
 #include "post-processing/tonemapper/tonemapper.h"
 #include "gpu-crash-tracker.h"
 #include "common_dpn.slang.spv.h"
+#include "Iridescence_ddpNrEa.slang.spv.h"
+#include "IridescenceStone_ddpNrEa.slang.spv.h"
 #include <filesystem>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -67,7 +69,7 @@ Eigen::Quaternionf camRot{ Eigen::Quaternionf::Identity() };
 bool done{};
 float lastX = 1920 / 2, lastY = 1080 / 2;
 float sens = 0.005f;
-float moveSensSlow = 0.001f;
+float moveSensSlow = 0.005f;
 float moveSens = 1.0f;
 void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
     if (!done) {
@@ -148,31 +150,33 @@ int main(void) {
             { "specularTextureId", 4 },
             { "normalTextureId", 8 },
         } } });
+        scene.addMaterialShader("Iridescence_ddpNrEa", Iridescence_ddpNrEa_shader, Iridescence_ddpNrEa_shader_sizeInBytes, { { 16, {
+            { "diffuseTextureId", 0 },
+            { "specularTextureId", 4 },
+            { "normalTextureId", 8 },
+            { "emissionTextureId", 12 },
+        } } });
+        scene.addMaterialShader("IridescenceStone_ddpNrEa", IridescenceStone_ddpNrEa_shader, IridescenceStone_ddpNrEa_shader_sizeInBytes, { { 76, {
+            { "FalloffAndLuminance", 0 },
+            { "IridescenceOffset", 16 },
+            { "WPBRFactor", 32 },
+            { "diffuseTextureId", 48 },
+            { "diffuse1TextureId", 52 },
+            { "specularTextureId", 56 },
+            { "normalTextureId", 60 },
+            { "reflectionTextureId", 64 },
+            { "emissionTextureId", 68 },
+            { "transparencyTextureId", 72 },
+        } } });
 
-        //scene.addTexture("chr_sonic_cloth_abd", "chr_sonic_cloth_abd.dds");
-        //scene.addTexture("chr_sonic_cloth_prm", "chr_sonic_cloth_prm.dds");
-        //scene.addTexture("chr_sonic_cloth_nrm", "chr_sonic_cloth_nrm.dds");
-        //scene.addTexture("chr_sonic_fur_abd", "chr_sonic_fur_abd.dds");
-        //scene.addTexture("chr_sonic_fur_prm", "chr_sonic_fur_prm.dds");
-        //scene.addTexture("chr_sonic_fur_nrm", "chr_sonic_fur_nrm.dds");
-        //scene.addTexture("chr_sonic_fur_fal", "chr_sonic_fur_fal.dds");
-        //scene.addTexture("chr_sonic_fur_flw", "chr_sonic_fur_flw.dds");
-        //scene.addTexture("chr_sonic_fur_fur", "chr_sonic_fur_fur.dds");
-        //scene.addTexture("chr_sonic_skin_abd", "chr_sonic_skin_abd.dds");
-        //scene.addTexture("chr_sonic_skin_prm", "chr_sonic_skin_prm.dds");
-        //scene.addTexture("chr_sonic_skin_nrm", "chr_sonic_skin_nrm.dds");
-        //scene.addTexture("chr_sonic_skin_fal", "chr_sonic_skin_fal.dds");
-        //scene.addTexture("chr_sonic_eye_abd", "chr_sonic_eye_abd.dds");
-        //scene.addTexture("chr_sonic_eye_prm", "chr_sonic_eye_prm.dds");
-        //scene.addTexture("chr_sonic_eye_nra", "chr_sonic_eye_nra.dds");
-        //scene.addTexture("chr_sonic_eye_spt", "chr_sonic_eye_spt.dds");
-        //scene.addMaterial("chr_sonic_fur", "chr_sonic_fur.material");
-        //scene.addMaterial("chr_sonic_cloth", "chr_sonic_cloth.material");
-        //scene.addMaterial("chr_sonic_skin", "chr_sonic_skin.material");
-        //scene.addMaterial("chr_sonic_mouth", "chr_sonic_mouth.material");
-        //scene.addMaterial("chr_sonic_eyeL", "chr_sonic_eyeL.material");
-        //scene.addMaterial("chr_sonic_eyeR", "chr_sonic_eyeR.material");
-        //scene.addModel("chr_sonic.model");
+        for (auto& f : std::filesystem::directory_iterator("./scene")) {
+            auto fpath = f.path();
+
+            if (fpath.extension() == ".ntsp") {
+                scene.addTextureStreamingPackage(fpath.stem().generic_string(), fpath.generic_string());
+            }
+        }
+
         for (auto& f : std::filesystem::directory_iterator("./scene")) {
             auto fpath = f.path();
 
@@ -214,7 +218,7 @@ int main(void) {
         }
 
         scene.addModelInstance("chr_sonic", Eigen::Affine3f{ Eigen::Translation3f{ 0.0f, 0.0f, 0.0f } });
-        //scene.addModelInstance("cmnisl_obj_airwall02_A", Eigen::Affine3f{ Eigen::Translation3f{ 2.0f, 0.0f, 0.0f } });
+        scene.addModelInstance("cmnisl_obj_airwall02_A", Eigen::Affine3f{ Eigen::Translation3f{ 1.5f, 1.0f, -1.0f } * Eigen::AngleAxisf{ -EIGEN_PI / 5, Eigen::Vector3f::UnitY() } });
 
         scene.finalize();
 

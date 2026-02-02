@@ -17,6 +17,7 @@ struct SurfaceParameters {
     Basis basis;
     float2 uv;
     float2 uv2;
+    float4 vertexColor;
 };
 
 struct MaterialShaderPayload {

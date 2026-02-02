@@ -9,6 +9,7 @@ namespace he2rt::shaders {
 		uint32_t binormalOffset;
 		uint32_t uvOffset;
 		uint32_t uv2Offset;
+		uint32_t colorOffset;
 	};
 
 	struct Sampler {
@@ -37,5 +38,6 @@ namespace he2rt::shaders {
 		float4x4 viewInverse;
 		float4x4 projInverse;
 		uint32_t frame = 0;
+		uint32_t totalFrame = 0;
 	};
 }

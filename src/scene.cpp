@@ -5,6 +5,31 @@
 using GI = ucsl::reflection::game_interfaces::standalone::StandaloneGameInterface;
 
 namespace he2rt {
+    Scene::TextureStreamingPackage::TextureStreamingPackage(const std::string& filename, std::unordered_map<std::string, TextureInfo>&& textures) : filename{ filename }, textures { std::move(textures) } {
+    }
+
+    Scene::TextureStreamingPackage::TextureStreamingPackage(TextureStreamingPackage&& other) : filename{ std::move(other.filename) }, textures{ std::move(other.textures) } {
+    }
+
+    Scene::TextureStreamingPackage& Scene::TextureStreamingPackage::operator=(TextureStreamingPackage&& other) {
+        filename = std::move(other.filename);
+        textures = std::move(other.textures);
+        return *this;
+    }
+
+    Scene::TextureStreamingPackage::TextureInfo::TextureInfo(std::vector<MipmapInfo>&& mipmapInfos, unsigned short width, unsigned short height) : mipmapInfos{ std::move(mipmapInfos) }, width{ width }, height{ height } {
+    }
+
+    Scene::TextureStreamingPackage::TextureInfo::TextureInfo(TextureInfo&& other) : mipmapInfos{ std::move(other.mipmapInfos) }, width{ width }, height{ height } {
+    }
+
+    Scene::TextureStreamingPackage::TextureInfo& Scene::TextureStreamingPackage::TextureInfo::operator=(TextureInfo&& other) {
+        mipmapInfos = std::move(other.mipmapInfos);
+        width = other.width;
+        height = other.height;
+        return *this;
+    }
+
     Scene::Model::Model(Model&& other)
         : meshes{ std::move(other.meshes) }
         , shaderMeshes{ std::move(other.shaderMeshes) }
@@ -76,6 +101,8 @@ namespace he2rt {
                     found = true;
                 }
             });
+
+            std::cout << "Loaded through NEDARC" << std::endl;
         }
         else {
             addModel(name, ims);
@@ -107,102 +134,80 @@ namespace he2rt {
                     found = true;
                 }
             });
+
+            std::cout << "Loaded through NEDARC" << std::endl;
         }
         else {
             addTerrainModel(name, ims);
         }
     }
 
+    void Scene::addTextureStreamingPackage(const std::string& name, const std::string& filename) {
+        std::ifstream ifs{ filename, std::ios::binary };
+        rip::binary::fast_istream fis{ ifs };
+        rip::binary::binary_istream<size_t> stream{ fis, std::endian::native, 0ull };
+
+        ucsl::reflection::providers::BoundProvider::RootType refl{ ucsl::reflection::providers::simplerfl<GI, size_t>::Type<ucsl::resources::ntsp::v1::reflections::NeedleTextureStreamingPackage>{} };
+        typename rip::accessors::binary_istream<std::remove_reference_t<decltype(stream)>>::template ValueAccessor<decltype(refl)> acc{ stream, refl };
+
+        auto ntsp = acc.as_structure();
+
+        auto textures = ntsp.get_field<"textures">().as_carray();
+        auto mipmaps = ntsp.get_field<"mipmaps">().as_carray();
+        size_t tocSize = ntsp.get_field<"tocSize">().as_primitive().as<size_t>();
+        size_t textureCount = textures.get_length();
+
+        std::unordered_map<std::string, TextureStreamingPackage::TextureInfo> textureInfos{};
+        textureInfos.reserve(textureCount);
+
+        for (size_t i = 0; i < textureCount; i++) {
+            auto texture = textures[i].as_structure();
+
+            unsigned int mipmapOffset = texture.get_field<"mipmapOffset">().as_primitive().as<unsigned int>();
+            unsigned int mipmapCount = texture.get_field<"mipmapCount">().as_primitive().as<unsigned int>();
+            unsigned short width = texture.get_field<"width">().as_primitive().as<unsigned short>();
+            unsigned short height = texture.get_field<"height">().as_primitive().as<unsigned short>();
+            std::string textureName = texture.get_field<"name">().as_primitive().as<const char*>();
+
+            //std::cout << textureName << ": " << width << "x" << height << ", " << mipmapCount << " mips" << std::endl;
+
+            std::vector<TextureStreamingPackage::TextureInfo::MipmapInfo> mipmapInfos{};
+            mipmapInfos.reserve(mipmapCount);
+
+            for (size_t j = 0; j < mipmapCount; j++) {
+                auto mipmap = mipmaps[mipmapOffset + j].as_structure();
+
+                auto data = mipmap.get_field<"data">().as_pointer().get().value().as_carray();
+                auto size = mipmap.get_field<"size">().as_primitive().as<size_t>();
+
+                mipmapInfos.emplace_back(data.reference.offset, size);
+            }
+
+            textureInfos.emplace(textureName, TextureStreamingPackage::TextureInfo{ std::move(mipmapInfos), width, height });
+        }
+
+        uint32_t textureStreamingPackageId{ (uint32_t)textureStreamingPackages.size() };
+        textureStreamingPackages.emplace_back(filename, std::move(textureInfos));
+        textureStreamingPackageIdsByName[name] = textureStreamingPackageId;
+
+        std::cout << "Loaded texture streaming package " << name << std::endl;
+    }
+
     void Scene::addTexture(const std::string& name, const std::string& filename) {
-        dds::Image ddsImage;
-        dds::readFile(filename, &ddsImage);
+        std::ifstream ifs{ filename, std::ios::binary | std::ios::ate };
+        size_t fileSize = ifs.tellg();
 
-        vk::ImageCreateInfo imageCreateInfo{ dds::getVulkanImageCreateInfo(&ddsImage) };
-        vk::ImageViewCreateInfo imageViewCreateInfo{ dds::getVulkanImageViewCreateInfo(&ddsImage) };
+        auto fileData = std::make_unique<uint8_t[]>(fileSize);
 
-        auto textureId = textures.size();
+        ifs.seekg(std::ios::beg);
+        ifs.read((char*)&fileData[0], fileSize);
 
-        imageCreateInfo.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst;
-        imageCreateInfo.samples = vk::SampleCountFlagBits::e1;
-
-        if (ddsImage.format == DXGI_FORMAT_BC6H_UF16)
-            imageCreateInfo.format = vk::Format::eBc6HUfloatBlock;
-
-        if (ddsImage.format == DXGI_FORMAT_BC6H_SF16)
-            imageCreateInfo.format = vk::Format::eBc6HSfloatBlock;
-
-        auto image = device.createImage(imageCreateInfo);
-
-        imageViewCreateInfo.image = image.image;
-
-        auto stagingBuffer = device.createBuffer(
-            ddsImage.mipmaps[0].size_bytes(),
-            16,
-            vk::BufferUsageFlagBits2::eTransferSrc | vk::BufferUsageFlagBits2::eTransferDst | vk::BufferUsageFlagBits2::eShaderDeviceAddress,
-            vma::MemoryUsage::eAutoPreferHost,
-            vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped,
-            vk::MemoryPropertyFlagBits::eHostCoherent
-        );
-
-        memcpy(stagingBuffer.hostAddress, ddsImage.mipmaps[0].data(), ddsImage.mipmaps[0].size_bytes());
-
-        vk::ImageSubresourceRange colorRange{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
-
-        device.runOneTimeCommandBuffer([&](vk::CommandBuffer& cmd) {
-            std::array<vk::ImageMemoryBarrier2, 1> imageBarrierBeforeClear{ {
-                {
-                    vk::PipelineStageFlagBits2::eNone,
-                    vk::AccessFlagBits2::eNone,
-                    vk::PipelineStageFlagBits2::eTransfer,
-                    vk::AccessFlagBits2::eTransferWrite,
-                    vk::ImageLayout::eUndefined,
-                    vk::ImageLayout::eTransferDstOptimal,
-                    vk::QueueFamilyIgnored,
-                    vk::QueueFamilyIgnored,
-                    image.image,
-                    colorRange,
-                },
-            } };
-            cmd.pipelineBarrier2({ {}, {}, {}, imageBarrierBeforeClear });
-
-            std::array<vk::BufferImageCopy2, 1> bufferImageCopies{ {
-                { 0, ddsImage.width, ddsImage.height, { vk::ImageAspectFlagBits::eColor, 0, 0, 1 }, { 0, 0, 0 }, { ddsImage.width, ddsImage.height, ddsImage.depth } },
-            } };
-            cmd.copyBufferToImage2({ stagingBuffer.buffer, image.image, vk::ImageLayout::eTransferDstOptimal, bufferImageCopies });
-            std::array<vk::ImageMemoryBarrier2, 1> imageBarrierAfterClear{ {
-                {
-                    vk::PipelineStageFlagBits2::eTransfer,
-                    vk::AccessFlagBits2::eTransferWrite,
-                    vk::PipelineStageFlagBits2::eAllGraphics | vk::PipelineStageFlagBits2::eAllCommands | vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
-                    vk::AccessFlagBits2::eShaderRead,
-                    vk::ImageLayout::eTransferDstOptimal,
-                    vk::ImageLayout::eGeneral,
-                    vk::QueueFamilyIgnored,
-                    vk::QueueFamilyIgnored,
-                    image.image,
-                    colorRange,
-                },
-            } };
-            cmd.pipelineBarrier2({ {}, {}, {}, imageBarrierAfterClear });
-        });
-
-        auto imageView = device.device.createImageView(imageViewCreateInfo);
-        auto sampler = device.createSampler({
-            {},
-            vk::Filter::eLinear,
-            vk::Filter::eLinear,
-            vk::SamplerMipmapMode::eNearest,
-            vk::SamplerAddressMode::eRepeat,
-            vk::SamplerAddressMode::eRepeat,
-            vk::SamplerAddressMode::eRepeat,
-            {},
-        });
-        vk::DescriptorImageInfo descriptor{ sampler.sampler, imageView, vk::ImageLayout::eGeneral };
-
-        textures.emplace_back(std::move(image), std::move(imageView), std::move(sampler), std::move(descriptor));
-        textureIdsByName[name] = textureId;
-
-        std::cout << "Loaded texture " << name << std::endl;
+        if (*((ucsl::magic_t<4>*)fileData.get()) == "NTSI") {
+            addStreamingTexture(name, fileData.get(), fileSize);
+        }
+        else {
+            addStandardTexture(name, fileData.get(), fileSize);
+        }
     }
 
     void Scene::addMaterial(const std::string& name, std::istream& stream) {
@@ -220,10 +225,21 @@ namespace he2rt {
 
                     auto contexts = acc.as_structure();
 
-                    //std::string shaderName = contexts.get_field<"shaderName">().as_primitive().as<const char*>();
-                    //std::string subShaderName = contexts.get_field<"subShaderName">().as_primitive().as<const char*>();
-                    std::string shaderName = "Common_dpn";
-                    std::string subShaderName = "Common_dpn";
+                    std::string shaderName = contexts.get_field<"shaderName">().as_primitive().as<const char*>();
+                    std::string subShaderName = contexts.get_field<"subShaderName">().as_primitive().as<const char*>();
+
+                    if (!materialShaders.contains(shaderName)) {
+                        std::cout << "WARN: Could not find shader " << shaderName << ". Falling back to Common_dpn" << std::endl;
+
+                        shaderName = "Common_dpn";
+                    }
+
+                    if (!materialShaders.contains(subShaderName)) {
+                        std::cout << "WARN: Could not find subshader " << subShaderName << ". Falling back to Common_dpn" << std::endl;
+
+                        subShaderName = "Common_dpn";
+                    }
+
                     auto textureNames = contexts.get_field<"textureNames">().as_pointer().get().value().as_carray();
                     auto textures = contexts.get_field<"textures">().as_pointer().get().value().as_carray();
                     auto alphaThreshold = contexts.get_field<"alphaThreshold">().as_primitive().as<unsigned char>();
@@ -370,18 +386,26 @@ namespace he2rt {
                     auto shaderId{ materialShader.shaderId };
                     auto shaderParamsPtr{ std::make_unique<char[]>(inputLayout.size + 16) };
                     auto* shaderParams{ util::align(shaderParamsPtr.get(), 16)};
+                    std::unordered_map<std::string, uint32_t> curIndices{};
 
                     for (size_t i = 0; i < textures.get_length(); i++) {
                         auto texture = textures[i].as_pointer().get().value().as_structure();
                         std::string name = texture.get_field<"name">().as_primitive().as<const char*>();
                         std::string type = texture.get_field<"type">().as_primitive().as<const char*>();
+                        uint32_t idx = curIndices[type]++;
 
-                        auto offsetIt = inputLayout.offsets.find(type + "TextureId");
+                        auto offsetIt = inputLayout.offsets.find(type + (idx == 0 ? "" : std::to_string(idx)) + "TextureId");
+
+                        std::cout << type << " = " << name << std::endl;
 
                         if (offsetIt == inputLayout.offsets.end())
                             continue;
 
                         auto* param = (shaders::Sampler*)&shaderParams[offsetIt->second];
+
+                        if (!textureIdsByName.contains(name))
+                            throw std::runtime_error{ std::string{ "Unknown texture " } + name };
+
                         param->textureId = textureIdsByName[name];
 
                         //auto texCoordIndex = texture.get_field<"texCoordIndex">().as_primitive().as<unsigned char>();
@@ -732,5 +756,163 @@ namespace he2rt {
         generateMaterialBuffer();
         generateModelBuffer();
         buildTLAS();
+    }
+
+    Scene::DDSImageCreateInfo Scene::readDDSImage(uint8_t* data, size_t size) {
+        dds::Image ddsImage;
+        dds::readImage(data, size, &ddsImage);
+
+        vk::ImageCreateInfo imageCreateInfo{ dds::getVulkanImageCreateInfo(&ddsImage) };
+        vk::ImageViewCreateInfo imageViewCreateInfo{ dds::getVulkanImageViewCreateInfo(&ddsImage) };
+
+        imageCreateInfo.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst;
+        imageCreateInfo.samples = vk::SampleCountFlagBits::e1;
+
+        if (ddsImage.format == DXGI_FORMAT_BC6H_UF16) {
+            imageCreateInfo.format = vk::Format::eBc6HUfloatBlock;
+            imageViewCreateInfo.format = vk::Format::eBc6HUfloatBlock;
+        }
+
+        if (ddsImage.format == DXGI_FORMAT_BC6H_SF16) {
+            imageCreateInfo.format = vk::Format::eBc6HSfloatBlock;
+            imageViewCreateInfo.format = vk::Format::eBc6HSfloatBlock;
+        }
+
+        return { std::move(ddsImage), std::move(imageCreateInfo), std::move(imageViewCreateInfo) };
+    }
+
+    void Scene::addTexture(const std::string& name, const DDSImageCreateInfo& ddsImage, uint8_t* data, size_t size) {
+        auto image = device.createImage(ddsImage.imageCreateInfo);
+
+        vk::ImageViewCreateInfo imageViewCreateInfo = ddsImage.imageViewCreateInfo;
+
+        imageViewCreateInfo.image = image.image;
+
+        auto stagingBuffer = device.createBuffer(
+            size,
+            16,
+            vk::BufferUsageFlagBits2::eTransferSrc | vk::BufferUsageFlagBits2::eTransferDst | vk::BufferUsageFlagBits2::eShaderDeviceAddress,
+            vma::MemoryUsage::eAutoPreferHost,
+            vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped,
+            vk::MemoryPropertyFlagBits::eHostCoherent
+        );
+
+        memcpy(stagingBuffer.hostAddress, data, size);
+
+        vk::ImageSubresourceRange colorRange{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
+
+        device.runOneTimeCommandBuffer([&](vk::CommandBuffer& cmd) {
+            std::array<vk::ImageMemoryBarrier2, 1> imageBarrierBeforeClear{ {
+                {
+                    vk::PipelineStageFlagBits2::eNone,
+                    vk::AccessFlagBits2::eNone,
+                    vk::PipelineStageFlagBits2::eTransfer,
+                    vk::AccessFlagBits2::eTransferWrite,
+                    vk::ImageLayout::eUndefined,
+                    vk::ImageLayout::eTransferDstOptimal,
+                    vk::QueueFamilyIgnored,
+                    vk::QueueFamilyIgnored,
+                    image.image,
+                    colorRange,
+                },
+            } };
+            cmd.pipelineBarrier2({ {}, {}, {}, imageBarrierBeforeClear });
+
+            std::array<vk::BufferImageCopy2, 1> bufferImageCopies{ {
+                { 0, ddsImage.ddsImage.width, ddsImage.ddsImage.height, { vk::ImageAspectFlagBits::eColor, 0, 0, 1 }, { 0, 0, 0 }, { ddsImage.ddsImage.width, ddsImage.ddsImage.height, ddsImage.ddsImage.depth } },
+            } };
+            cmd.copyBufferToImage2({ stagingBuffer.buffer, image.image, vk::ImageLayout::eTransferDstOptimal, bufferImageCopies });
+            std::array<vk::ImageMemoryBarrier2, 1> imageBarrierAfterClear{ {
+                {
+                    vk::PipelineStageFlagBits2::eTransfer,
+                    vk::AccessFlagBits2::eTransferWrite,
+                    vk::PipelineStageFlagBits2::eAllGraphics | vk::PipelineStageFlagBits2::eAllCommands | vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+                    vk::AccessFlagBits2::eShaderRead,
+                    vk::ImageLayout::eTransferDstOptimal,
+                    vk::ImageLayout::eGeneral,
+                    vk::QueueFamilyIgnored,
+                    vk::QueueFamilyIgnored,
+                    image.image,
+                    colorRange,
+                },
+            } };
+            cmd.pipelineBarrier2({ {}, {}, {}, imageBarrierAfterClear });
+            });
+
+        auto imageView = device.device.createImageView(imageViewCreateInfo);
+        auto sampler = device.createSampler({
+            {},
+            vk::Filter::eLinear,
+            vk::Filter::eLinear,
+            vk::SamplerMipmapMode::eNearest,
+            vk::SamplerAddressMode::eRepeat,
+            vk::SamplerAddressMode::eRepeat,
+            vk::SamplerAddressMode::eRepeat,
+            {},
+        });
+        vk::DescriptorImageInfo descriptor{ sampler.sampler, imageView, vk::ImageLayout::eGeneral };
+
+        uint32_t textureId = (uint32_t)textures.size();
+        textures.emplace_back(std::move(image), std::move(imageView), std::move(sampler), std::move(descriptor));
+        textureIdsByName[name] = textureId;
+
+        std::cout << "Loaded texture " << name << std::endl;
+    }
+
+    void Scene::addStandardTexture(const std::string& name, uint8_t* data, size_t size) {
+        DDSImageCreateInfo ddsImage = readDDSImage(data, size);
+
+        addTexture(name, ddsImage, ddsImage.ddsImage.mipmaps[0].data(), ddsImage.ddsImage.mipmaps[0].size_bytes());
+    }
+
+    void Scene::addStreamingTexture(const std::string& name, uint8_t* data, size_t size) {
+        imemstream ims{ (char*)data, size };
+        rip::binary::containers::ntsi::v1::NeedleTextureStreamingInfoReader<size_t> reader{ ims };
+
+        auto data$ = reader.getStream();
+
+        data$.skip_padding_bytes(reader.header.defaultMipSize);
+        
+        size_t ddsHeaderSize = size - data$.tellg();
+        auto ddsHeaderData = std::make_unique<uint8_t[]>(ddsHeaderSize);
+
+        ims.read((char*)ddsHeaderData.get(), ddsHeaderSize);
+
+        DDSImageCreateInfo ddsImage = readDDSImage(ddsHeaderData.get(), ddsHeaderSize);
+
+        auto textureStreamingPackageIt{ textureStreamingPackageIdsByName.find(reader.packageName) };
+
+        if (textureStreamingPackageIt == textureStreamingPackageIdsByName.end())
+            throw std::runtime_error{ std::string{ "Unknown texture streaming package: " } + reader.packageName };
+
+        auto textureStreamingPackageId{ textureStreamingPackageIt->second };
+        auto& textureStreamingPackage{ textureStreamingPackages[textureStreamingPackageId] };
+
+        auto textureInfoIt{ textureStreamingPackage.textures.find(name) };
+
+        if (textureInfoIt == textureStreamingPackage.textures.end())
+            throw std::runtime_error{ std::string{ "Texture streaming package " } + reader.packageName + " does not contain texture " + name };
+
+        auto& textureInfo{ textureInfoIt->second };
+        auto& mipmapInfo = textureInfo.mipmapInfos[0];
+
+        std::ifstream ifs{ textureStreamingPackage.filename, std::ios::binary };
+
+        auto imgData = std::make_unique<uint8_t[]>(mipmapInfo.size);
+
+        ifs.seekg(mipmapInfo.offset);
+        ifs.read((char*)imgData.get(), mipmapInfo.size);
+
+        addTexture(name, ddsImage, imgData.get(), mipmapInfo.size);
+
+        std::ofstream ofs{ name + "_debug_dump.dds", std::ios::binary};
+        ofs.write((char*)ddsHeaderData.get(), ddsHeaderSize);
+        
+        for (auto& mip : textureInfo.mipmapInfos) {
+            auto mipImgData = std::make_unique<uint8_t[]>(mip.size);
+            ifs.seekg(mip.offset);
+            ifs.read((char*)mipImgData.get(), mip.size);
+            ofs.write((char*)mipImgData.get(), mip.size);
+        }
     }
 }

@@ -15,6 +15,7 @@
 #include <rip/binary/containers/needle-archive/v1.h>
 #include <rip/binary/containers/mirage/v2.h>
 #include <rip/binary/containers/binary-file/v2.h>
+#include <rip/binary/containers/ntsi/v1.h>
 #include <rip/binary/serialization/ReflectionDeserializer.h>
 #include <rip/binary/stream.h>
 #include <ucsl-reflection/game-interfaces/standalone/game-interface.h>
@@ -22,8 +23,10 @@
 #include <ucsl-reflection/reflections/resources/material/v3.h>
 #include <ucsl-reflection/reflections/resources/model/v5.h>
 #include <ucsl-reflection/reflections/resources/pointcloud/v2.h>
+#include <ucsl-reflection/reflections/resources/ntsp/v1.h>
 #include <ucsl-reflection/bound-reflection.h>
 #include <rip/binary/accessors/binary-stream.h>
+#include <dds.hpp>
 #include "mem_stream.h"
 #include "shader-types.h"
 
@@ -44,6 +47,42 @@ namespace he2rt {
 		struct LightInstance {
 			uint32_t lightId{};
 			float3x4 transform{};
+		};
+
+		struct DDSImageCreateInfo {
+			dds::Image ddsImage{};
+			vk::ImageCreateInfo imageCreateInfo;
+			vk::ImageViewCreateInfo imageViewCreateInfo;
+		};
+
+		struct TextureStreamingPackage {
+			struct TextureInfo {
+				struct MipmapInfo {
+					size_t offset{};
+					size_t size{};
+				};
+
+				std::vector<MipmapInfo> mipmapInfos{};
+				unsigned short width{};
+				unsigned short height{};
+
+				TextureInfo(std::vector<MipmapInfo>&& mipmapInfos, unsigned short width, unsigned short height);
+				TextureInfo(const TextureInfo& other) = delete;
+				TextureInfo(TextureInfo&& other);
+
+				TextureInfo& operator=(const TextureInfo& other) = delete;
+				TextureInfo& operator=(TextureInfo&& other);
+			};
+
+			std::string filename{};
+			std::unordered_map<std::string, TextureInfo> textures{};
+
+			TextureStreamingPackage(const std::string& filename, std::unordered_map<std::string, TextureInfo>&& textures);
+			TextureStreamingPackage(const TextureStreamingPackage& other) = delete;
+			TextureStreamingPackage(TextureStreamingPackage&& other);
+
+			TextureStreamingPackage& operator=(const TextureStreamingPackage& other) = delete;
+			TextureStreamingPackage& operator=(TextureStreamingPackage&& other);
 		};
 
 		struct Texture {
@@ -159,6 +198,9 @@ namespace he2rt {
 
 					uv2[0] = _byteswap_ushort(uv2[0]);
 					uv2[1] = _byteswap_ushort(uv2[1]);
+
+					auto* col = reinterpret_cast<uint32_t*>(&vertexBuf[i * vertexStride + 0x20]);
+					*col = _byteswap_ulong(*col);
 				}
 
 				//std::cout << " ==== Loading mesh " << name << " ====" << std::endl;
@@ -206,7 +248,7 @@ namespace he2rt {
 					(uint16_t*)indexBuffer.deviceAddress,
 					(uint8_t*)vertexBuffer.deviceAddress,
 					materialId,
-					shaders::VertexDataReflection{ static_cast<uint8_t>(vertexStride), 0, 0xC, 0x10, 0x14, 0x18, 0x1C }
+					shaders::VertexDataReflection{ static_cast<uint8_t>(vertexStride), 0, 0xC, 0x10, 0x14, 0x18, 0x1C, 0x20 }
 				);
 
 				return {
@@ -256,8 +298,8 @@ namespace he2rt {
 
 			void addMeshGroup(Scene& scene, std::vector<vk::AccelerationStructureGeometryKHR>& geometries, std::vector<vk::AccelerationStructureBuildRangeInfoKHR>& rangeInfos, auto meshGroup) {
 				addMeshes(scene, geometries, rangeInfos, meshGroup.get_field<"opaqueMeshes">().as_pointer().get().value().as_carray());
-				addMeshes(scene, geometries, rangeInfos, meshGroup.get_field<"transparentMeshes">().as_pointer().get().value().as_carray());
-				addMeshes(scene, geometries, rangeInfos, meshGroup.get_field<"punchthroughMeshes">().as_pointer().get().value().as_carray());
+				//addMeshes(scene, geometries, rangeInfos, meshGroup.get_field<"transparentMeshes">().as_pointer().get().value().as_carray());
+				//addMeshes(scene, geometries, rangeInfos, meshGroup.get_field<"punchthroughMeshes">().as_pointer().get().value().as_carray());
 			}
 
 			AccelerationStructure createBLAS(Scene& scene, auto contexts) {
@@ -265,7 +307,10 @@ namespace he2rt {
 				std::vector<vk::AccelerationStructureBuildRangeInfoKHR> rangeInfos{};
 
 				std::cout << "Mesh group count: " << contexts.get_field<"meshGroupCount">().as_primitive().as<unsigned int>() << std::endl;
-				addMeshGroup(scene, geometries, rangeInfos, contexts.get_field<"meshGroups">().as_pointer().get().value().as_carray()[0].as_pointer().get().value().as_structure());
+
+				auto meshGroups = contexts.get_field<"meshGroups">().as_pointer().get().value().as_carray();
+
+				addMeshGroup(scene, geometries, rangeInfos, meshGroups[0].as_pointer().get().value().as_structure());
 
 				return scene.device.buildBLAS(geometries, rangeInfos);
 			}
@@ -288,6 +333,9 @@ namespace he2rt {
 		Device& device;
 
 		entt::registry registry{};
+
+		std::vector<TextureStreamingPackage> textureStreamingPackages{};
+		std::unordered_map<std::string, uint32_t> textureStreamingPackageIdsByName{};
 
 		std::vector<Texture> textures{};
 		std::unordered_map<std::string, uint32_t> textureIdsByName{};
@@ -400,6 +448,7 @@ namespace he2rt {
 			}
 		}
 
+		void addTextureStreamingPackage(const std::string& name, const std::string& filename);
 		void addTexture(const std::string& name, const std::string& filename);
 		void addMaterial(const std::string& name, std::istream& stream);
 		void addMaterial(const std::string& name, const std::string& filename);
@@ -415,5 +464,11 @@ namespace he2rt {
 		void generateModelBuffer();
 		void buildTLAS();
 		void finalize();
+
+	private:
+		DDSImageCreateInfo readDDSImage(uint8_t* data, size_t size);
+		void addTexture(const std::string& name, const DDSImageCreateInfo& ddsImage, uint8_t* data, size_t size);
+		void addStandardTexture(const std::string& name, uint8_t* data, size_t size);
+		void addStreamingTexture(const std::string& name, uint8_t* data, size_t size);
 	};
 }

@@ -7,7 +7,14 @@ float SmoothnessToRoughness(float smoothness) {
 
 void LoadPRM(inout MaterialParameters parameters, float4 prm) {
     parameters.specular = prm.x;
-    parameters.roughness = max(SmoothnessToRoughness(prm.y), 0.000001);
+    parameters.roughness = SmoothnessToRoughness(prm.y);
+    parameters.metallic = prm.z;
+    parameters.cavity = prm.w;
+}
+
+void LoadPRMRoughness(inout MaterialParameters parameters, float4 prm) {
+    parameters.specular = prm.x;
+    parameters.roughness = prm.y;
     parameters.metallic = prm.z;
     parameters.cavity = prm.w;
 }

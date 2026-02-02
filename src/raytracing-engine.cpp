@@ -205,6 +205,7 @@ namespace he2rt {
         } };
         cmd.pipelineBarrier2({ {}, memoryBarriers });
 
+        globalPushConstant.totalFrame++;
         globalPushConstant.frame++;
     }
 }
