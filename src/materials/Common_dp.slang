@@ -19,6 +19,6 @@ void main(inout MaterialShaderPayload payload) {
     SpecularSampler specularTexture = { textures[params.specularTextureId] };
 
     payload.result.material.normal = payload.surface.basis.normal;
-    payload.result.material.albedo = srgbToLinearSimple(diffuseTexture.SampleLevel(payload.surface.uv, 0).xyz);
-    loadNeedlePRM(payload.result.material, specularTexture.SampleLevel(payload.surface.uv, 0));
+    payload.result.material.albedo = srgbToLinearSimple(diffuseTexture.SampleLevel(payload.surface.uvs[0], 0).xyz);
+    loadNeedlePRM(payload.result.material, specularTexture.SampleLevel(payload.surface.uvs[0], 0));
 }

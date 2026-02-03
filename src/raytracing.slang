@@ -77,10 +77,9 @@ SurfaceParameters collectSurfaceParameters(Mesh mesh, uint triangleId, float4x3 
         Basis(
             normalize(mul(float4(nrm, 0.0), objToWorld).xyz),
             normalize(mul(float4(tng, 0.0), objToWorld).xyz),
-            normalize(mul(float4(bin, 0.0), objToWorld).xyz)
+              normalize(mul(float4(bin, 0.0), objToWorld).xyz)
         ),
-        uv,
-        uv2,
+        { uv, uv2, uv, uv },
         color,
     };
 }

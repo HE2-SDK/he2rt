@@ -18,6 +18,6 @@ void main(inout MaterialShaderPayload payload) {
     Sampler2D diffuseTexture = textures[params.diffuseTextureId];
 
     payload.result.material.normal = payload.surface.basis.normal;
-    payload.result.material.albedo = srgbToLinearSimple(diffuseTexture.SampleLevel(payload.surface.uv, 0).xyz);
+    payload.result.material.albedo = srgbToLinearSimple(diffuseTexture.SampleLevel(payload.surface.uvs[0], 0).xyz);
     loadNeedlePRM(payload.result.material, unpackPBRFactor(params.PBRFactor));
 }

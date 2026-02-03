@@ -52,15 +52,15 @@ void main(inout MaterialShaderPayload payload) {
     Sampler2D transparencyTexture = textures[params.transparencyTextureId];
     Sampler2D luminanceTexture = textures[params.s_LuminanceTextureId];
 
-    float4 diffuse = diffuseTexture.SampleLevel(payload.surface.uv, 0);
-    float4 diffuse1 = diffuse1Texture.SampleLevel(payload.surface.uv2, 0);
-    NeedlePRMParameters specular = specularTexture.SampleLevel(payload.surface.uv, 0);
-    float3 emission = emissionTexture.SampleLevel(payload.surface.uv, 0).xyz;
-    float transparency = transparencyTexture.SampleLevel(payload.surface.uv, 0).x;
+    float4 diffuse = diffuseTexture.SampleLevel(payload.surface.uvs[0], 0);
+    float4 diffuse1 = diffuse1Texture.SampleLevel(payload.surface.uvs[1], 0);
+    NeedlePRMParameters specular = specularTexture.SampleLevel(payload.surface.uvs[0], 0);
+    float3 emission = emissionTexture.SampleLevel(payload.surface.uvs[0], 0).xyz;
+    float transparency = transparencyTexture.SampleLevel(payload.surface.uvs[0], 0).x;
     float luminance = luminanceTexture.SampleLevel(float2(0.75, 0.5), 0).x;
 
-    float3 normal0 = normalTexture.SampleLevel(payload.surface.uv, 0);
-    float3 normal1 = normalTexture.SampleLevel(payload.surface.uv2, 0);
+    float3 normal0 = normalTexture.SampleLevel(payload.surface.uvs[0], 0);
+    float3 normal1 = normalTexture.SampleLevel(payload.surface.uvs[1], 0);
 
     float blendFactor = saturate(payload.surface.vertexColor.x * diffuse.w * diffuse1.w);
     float3 normalBlended = normalize(lerp(normal0, normal1, blendFactor));

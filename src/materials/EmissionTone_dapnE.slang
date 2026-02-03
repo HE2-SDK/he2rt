@@ -27,10 +27,10 @@ void main(inout MaterialShaderPayload payload) {
     Sampler2D emissionTexture = textures[params.emissionTextureId];
     Sampler2D luminanceTexture = textures[params.s_LuminanceTextureId];
 
-    float3 diffuse = srgbToLinearSimple(diffuseTexture.SampleLevel(payload.surface.uv, 0).xyz);
-    NeedlePRMParameters specular = specularTexture.SampleLevel(payload.surface.uv, 0);
-    float3 normal = normalTexture.SampleLevel(payload.surface.uv, 0);
-    float3 emission = emissionTexture.SampleLevel(payload.surface.uv, 0).xyz;
+    float3 diffuse = srgbToLinearSimple(diffuseTexture.SampleLevel(payload.surface.uvs[0], 0).xyz);
+    NeedlePRMParameters specular = specularTexture.SampleLevel(payload.surface.uvs[0], 0);
+    float3 normal = normalTexture.SampleLevel(payload.surface.uvs[0], 0);
+    float3 emission = emissionTexture.SampleLevel(payload.surface.uvs[2], 0).xyz;
     float luminance = luminanceTexture.SampleLevel(float2(0.75, 0.5), 0).x;
 
     payload.result.material.normal = normal;

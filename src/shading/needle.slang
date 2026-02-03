@@ -20,7 +20,7 @@ float smoothnessToRoughness(float smoothness) {
 float3 unpackNormalMapTexture(float2 map) {
     float2 scaled = map * 2.0 - 1.0;
 
-    return normalize(float3(scaled, sqrt(1.0 - min(1.0, dot(scaled, scaled)))));
+    return float3(scaled, sqrt(1.0 - saturate(dot(scaled, scaled))));
 }
 
 NeedlePRMParameters unpackUnscaledSpecularTexture(float4 texture) {
@@ -72,7 +72,16 @@ struct NormalMapSamplerWithBasis {
     }
 
     float3 SampleLevel(float2 uv, float lod) {
-        return convertFromBasis(basis, sampler.SampleLevel(uv, lod));
+        float3 result = normalize(convertFromBasis(basis, sampler.SampleLevel(uv, lod)));
+
+        bool3 nan_check = result != result;
+        
+        if (nan_check.x | nan_check.y | nan_check.z) {
+            return basis.normal;
+        }
+        else {
+            return result;
+        }
     }
 };
 

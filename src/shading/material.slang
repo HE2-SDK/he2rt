@@ -3,8 +3,7 @@
 
 struct SurfaceParameters {
     Basis basis;
-    float2 uv;
-    float2 uv2;
+    float2 uvs[4];
     float4 vertexColor;
 };
 
