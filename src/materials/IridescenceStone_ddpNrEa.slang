@@ -1,6 +1,8 @@
 #include <shader-types.slang>
-#include <lighting/material.slang>
-#include <lighting/normals.slang>
+#include <shading/color.slang>
+#include <shading/material.slang>
+#include <shading/math.slang>
+#include <shading/needle.slang>
 
 using namespace he2rt::shaders;
 
@@ -37,38 +39,35 @@ void main(inout MaterialShaderPayload payload) {
     float iridescenceLuminance = params.FalloffAndLuminance.y;
     float emissionLuminance = params.FalloffAndLuminance.z;
 
-    float pbrFactor0Smoothness = params.WPBRFactor.x;
-    float pbrFactor0Metallic = params.WPBRFactor.y;
-    float pbrFactor1Smoothness = params.WPBRFactor.z;
-    float pbrFactor1Metallic = params.WPBRFactor.w;
+    NeedleWPRMParameters wpbrFactors[2] = unpackWPBRFactor(params.WPBRFactor);
 
     Sampler2D diffuseTexture = textures[params.diffuseTextureId];
     Sampler2D diffuse1Texture = textures[params.diffuse1TextureId];
-    Sampler2D specularTexture = textures[params.specularTextureId];
-    Sampler2D normalTexture = textures[params.normalTextureId];
+    SpecularSampler specularTexture = { textures[params.specularTextureId] };
+    NormalMapSamplerWithBasis normalTexture = { textures[params.normalTextureId], payload.surface.basis };
     Sampler2D reflectionTexture = textures[params.reflectionTextureId];
     Sampler2D emissionTexture = textures[params.emissionTextureId];
     Sampler2D transparencyTexture = textures[params.transparencyTextureId];
 
     float4 diffuse = diffuseTexture.SampleLevel(payload.surface.uv, 0);
     float4 diffuse1 = diffuse1Texture.SampleLevel(payload.surface.uv2, 0);
-    float4 specular = specularTexture.SampleLevel(payload.surface.uv, 0);
+    NeedlePRMParameters specular = specularTexture.SampleLevel(payload.surface.uv, 0);
     float3 emission = emissionTexture.SampleLevel(payload.surface.uv, 0).xyz;
     float transparency = transparencyTexture.SampleLevel(payload.surface.uv, 0).x;
 
-    float3 normal0 = UnpackNormalMapSafe(payload.surface.basis, normalTexture.SampleLevel(payload.surface.uv, 0).xy);
-    float3 normal1 = UnpackNormalMapSafe(payload.surface.basis, normalTexture.SampleLevel(payload.surface.uv2, 0).xy);
+    float3 normal0 = normalTexture.SampleLevel(payload.surface.uv, 0);
+    float3 normal1 = normalTexture.SampleLevel(payload.surface.uv2, 0);
 
     float blendFactor = saturate(payload.surface.vertexColor.x * diffuse.w * diffuse1.w);
-    float3 worldNormal = normalize(lerp(normal0, normal1, blendFactor));
+    float3 normalBlended = normalize(lerp(normal0, normal1, blendFactor));
 
 //    float3 cameraPosition = pushConst.viewInverse._m30_m31_m32;
 //    float3 iridescenceView = normalize(cameraPosition - payload.hit.world_position); // w components from normals
 
     float2 cameraBias = calculateCameraBias(0, 0, int2(0, 0));
 
-    float iridescenceNdotV0 = dot(normal0, payload.hit.view_direction);
-    float iridescenceNdotV1 = dot(payload.surface.basis.normal, payload.hit.view_direction);
+    float iridescenceNdotV0 = dot(normal0, payload.V);
+    float iridescenceNdotV1 = dot(payload.surface.basis.normal, payload.V);
 
     float fresnel0 = pow(1.0 - abs(iridescenceNdotV0), falloff);
     float fresnel1 = pow(1.0 - abs(iridescenceNdotV1), falloff);
@@ -83,53 +82,31 @@ void main(inout MaterialShaderPayload payload) {
     float3 iridescence = iridescence0 * iridescence1;
 
     float4 diffuseTotal = diffuse + float4(iridescence, 0.0f);
-    float3 diffuseBlended = pow(abs(lerp(diffuseTotal.xyz, diffuse1.xyz, blendFactor)), 2.2f);
+    float3 diffuseBlended = srgbToLinearSimple(lerp(diffuseTotal.xyz, diffuse1.xyz, blendFactor));
 
-    MaterialParameters materialParams;
-    //LoadAlbedoTexture(materialParams, diffuse.xyz);
-    LoadPRM(materialParams, specular);
+    //float3 textureF0 = lerp(specular.specular, diffuseTotal.xyz, specular.metallic);
+    //float3 pbrFactor0F0 = lerp(0.1, diffuseTotal.xyz, wpbrFactors[0].metallic);
+    //float3 pbrFactor1F0 = lerp(0.1, diffuse1.xyz, wpbrFactors[1].metallic);
 
-    float pbrFactor0Roughness = SmoothnessToRoughness(pbrFactor0Smoothness);
-    float pbrFactor1Roughness = SmoothnessToRoughness(pbrFactor1Smoothness);
-
-    //float3 textureF0 = lerp(materialParams.specular, diffuseTotal.xyz, materialParams.metallic);
-    //float3 pbrFactor0F0 = lerp(0.1, diffuseTotal.xyz, pbrFactor0Metallic);
-    //float3 pbrFactor1F0 = lerp(0.1, diffuse1.xyz, pbrFactor1Metallic);
-
-    float iridescenceSpecular = lerp(materialParams.specular, 0.1, iridescenceFresnel);
+    float iridescenceSpecular = lerp(specular.specular, 0.1, iridescenceFresnel);
     //float3 iridescenceF0 = lerp(textureF0, pbrFactor0F0, iridescenceFresnel);
-    float iridescenceRoughness = lerp(materialParams.roughness, pbrFactor0Roughness, iridescenceFresnel);
-    float iridescenceMetallic = lerp(materialParams.metallic, pbrFactor0Metallic, iridescenceFresnel);
+    float iridescenceRoughness = lerp(specular.roughness, wpbrFactors[0].roughness, iridescenceFresnel);
+    float iridescenceMetallic = lerp(specular.metallic, wpbrFactors[0].metallic, iridescenceFresnel);
 
     float totalSpecular = lerp(iridescenceSpecular, 0.1, blendFactor);
     //float3 totalF0 = lerp(iridescenceF0, pbrFactor1F0, blendFactor);
-    float totalRoughness = lerp(iridescenceRoughness, pbrFactor1Roughness, blendFactor);
-    float totalMetallic = lerp(iridescenceMetallic, pbrFactor1Metallic, blendFactor);
+    float totalRoughness = lerp(iridescenceRoughness, wpbrFactors[1].roughness, blendFactor);
+    float totalMetallic = lerp(iridescenceMetallic, wpbrFactors[1].metallic, blendFactor);
 
     float transparencyFromTexture = transparency < diffuseTotal.w ? diffuseTotal.w : 0.0f;
     float transparencyFromMatAnim = abs(diffuseTotal.w) < (9.99999997e-007 + ambient_color.y) ? 0 : saturate(transparencyFromTexture + 2 * ambient_color.x - 1);
 
-    LightingParameters lightingParams;
-    lightingParams.hit = payload.hit;
-    lightingParams.world_normal = normal0;
-    LoadAlbedoTexture(lightingParams.material, diffuseBlended);
-    lightingParams.material.specular = totalSpecular;
-    lightingParams.material.roughness = totalRoughness;
-    lightingParams.material.metallic = totalMetallic;
-    lightingParams.material.cavity = 0.0f;
+    payload.result.material.normal = normalBlended;
+    payload.result.material.albedo = diffuseBlended;
+    payload.result.material.specular = totalSpecular;
+    payload.result.material.roughness = totalRoughness;
+    payload.result.material.metallic = totalMetallic;
+    payload.result.material.cavity = 0.0f;
 
-    payload.result.contribution = (iridescence * (1 - blendFactor) * iridescenceLuminance + emission * (1 - blendFactor) * emissionLuminance) * transparencyFromMatAnim;
-
-    if (dot(lightingParams.hit.light_direction, lightingParams.world_normal) > 0.0f) {
-        BSDFEvaluationResult sunlight = EvaluateMaterial(lightingParams);
-        payload.result.contribution += sunlight.color;
-    }
-
-    payload.result.nextDirection = SampleMaterial(lightingParams, payload.randomness);
-    lightingParams.hit.light_direction = payload.result.nextDirection;
-    
-    BSDFEvaluationResult sampled = EvaluateMaterial(lightingParams);
-
-    float3 throughput = sampled.color / sampled.pdf;
-    payload.result.throughput = any(isnan(throughput)) || sampled.pdf < 0.0001f ? 0.0f : throughput;
+    payload.result.emission = (iridescence * (1 - blendFactor) * iridescenceLuminance + emission * (1 - blendFactor) * emissionLuminance) * transparencyFromMatAnim;
 }

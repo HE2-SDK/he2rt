@@ -1,18 +1,20 @@
-#include "shader-types.slang"
 #include "random.slang"
+#include "shader-types.slang"
+#include <shading/shading.slang>
 
 #define MISS_DEPTH 1000
 
 using namespace he2rt::shaders;
 
+struct PathTracingState {
+    float3 radiance = float3(0.0f, 0.0f, 0.0f);
+    float3 throughput = float3(1.0f, 1.0f, 1.0f);
+};
+
 struct HitPayload {
 	float3 color;
 	float weight;
 	int depth;
-};
-
-struct ShadowPayload {
-    int depth;
 };
 
 struct TriangleAttributes<T> {
@@ -57,32 +59,10 @@ float2 getInterpolatedHalf2Attribute(Mesh mesh, uint triangleIndex, uint offset,
     return float2(barycentrics.x) * float2(attrs.v0) + float2(barycentrics.y) * float2(attrs.v1) + float2(barycentrics.z) * float2(attrs.v2);
 }
 
-bool testShadowSER(float3 worldPosition, float3 worldNormal, float3 lightDirection) {
-    RayDesc ray;
-    ray.Origin = worldPosition + worldNormal * 0.001;
-    ray.Direction = lightDirection;
-    ray.TMin = 0.001;
-    ray.TMax = INFINITE;
-
-    ShadowPayload payload;
-    payload.depth = 0;
-
-    HitObject hit = HitObject::TraceRay(tlas, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, 0xFF, 0, 0, 1, ray, payload);
-
-    return hit.IsHit();
-}
-
-HitParameters collectHitParameters(Mesh mesh, uint triangleId, float3 worldRayDirection, float4x3 objToWorld, float3 barycentrics) {
+float3 getPosition(Mesh mesh, uint triangleId, float4x3 objToWorld, float3 barycentrics) {
     float3 pos = getInterpolatedAttribute<float3>(mesh, triangleId, mesh.vertexDataReflection.positionOffset, barycentrics);
-    float3 viewDirection = -worldRayDirection;
-    float3 lightDirection = normalize(float3(1.0f, 1.0f, 1.0f));
 
-    return {
-        float3(mul(float4(pos, 1.0f), objToWorld)),
-        viewDirection,
-        lightDirection,
-        float3(1.0f, 1.0f, 1.0f),
-    };
+    return mul(float4(pos, 1.0f), objToWorld);
 }
 
 SurfaceParameters collectSurfaceParameters(Mesh mesh, uint triangleId, float4x3 objToWorld, float3 barycentrics) {
@@ -94,9 +74,11 @@ SurfaceParameters collectSurfaceParameters(Mesh mesh, uint triangleId, float4x3 
     float4 color = getInterpolatedUByte4nAttribute(mesh, triangleId, mesh.vertexDataReflection.colorOffset, barycentrics);
 
     return {
-        normalize(mul(float4(nrm, 0.0), objToWorld).xyz),
-        normalize(mul(float4(tng, 0.0), objToWorld).xyz),
-        normalize(mul(float4(bin, 0.0), objToWorld).xyz),
+        Basis(
+            normalize(mul(float4(nrm, 0.0), objToWorld).xyz),
+            normalize(mul(float4(tng, 0.0), objToWorld).xyz),
+            normalize(mul(float4(bin, 0.0), objToWorld).xyz)
+        ),
         uv,
         uv2,
         color,
@@ -140,29 +122,35 @@ float3 pathTrace(RayDesc ray, inout uint seed) {
         uint geometryId = hit.GetGeometryIndex();
         uint triangleId = hit.GetPrimitiveIndex();
         float4x3 objToWorld = hit.GetObjectToWorld();
+        float3 viewDirection = -ray.Direction;
 
         Model model = pushConst.models[modelId];
         Mesh mesh = model.meshes[geometryId];
 
         // Collect some basic information
         float3 barycentrics = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
-        HitParameters hitParameters = collectHitParameters(mesh, triangleId, ray.Direction, objToWorld, barycentrics);
-        SurfaceParameters surfaceParameters = collectSurfaceParameters(mesh, triangleId, objToWorld, barycentrics);
+        float3 position = getPosition(mesh, triangleId, objToWorld, barycentrics);
+        SurfaceParameters surface = collectSurfaceParameters(mesh, triangleId, objToWorld, barycentrics);
 
         // Look up the material
         uint materialId = mesh.materialId;
         Material material = pushConst.materials[materialId];
 
         // Call the material shader
-        MaterialShaderPayload materialShaderPayload = { materialId, hitParameters, surfaceParameters, float3(rand(seed), rand(seed), rand(seed)) };
+        MaterialShaderPayload materialShaderPayload = { materialId, surface, viewDirection };
 
         CallShader<MaterialShaderPayload>(material.shaderId, materialShaderPayload);
 
-        if (!testShadowSER(hitParameters.world_position, surfaceParameters.basis.normal, hitParameters.light_direction)) {
-            state.radiance += materialShaderPayload.result.contribution * state.throughput;
-        }
+        bsdf::pbr::PBRBSDFContext ctx = bsdf::pbr::PBRBSDFContext(materialShaderPayload.result.material, viewDirection);
 
-        state.throughput *= materialShaderPayload.result.throughput;
+        // Add total contribution to radiance;
+        state.radiance += calculateMaterialContribution(ctx, materialShaderPayload.result.emission, position) * state.throughput;
+
+        float3 sampledDir = bsdf::pbr::sampleBSDF(ctx, float3(rand(seed), rand(seed), rand(seed)));
+        BSDFEvaluationResult sampled = bsdf::pbr::evaluateBSDF(ctx, sampledDir);
+
+        float3 throughput = sampled.color / sampled.pdf;
+        state.throughput *= any(isnan(throughput)) || sampled.pdf < 0.0001f ? 0.0f : throughput;
 
         // Russian roulette
         float rrPcont = min(max(state.throughput.x, max(state.throughput.y, state.throughput.z)) + 0.001F, 0.95F);
@@ -170,8 +158,8 @@ float3 pathTrace(RayDesc ray, inout uint seed) {
             break;
         state.throughput /= rrPcont;
 
-        ray.Origin = offsetRay(hitParameters.world_position, surfaceParameters.basis.normal);
-        ray.Direction = materialShaderPayload.result.nextDirection;
+        ray.Origin = offsetRay(position, surface.basis.normal);
+        ray.Direction = sampledDir;
     }
 
     return state.radiance;

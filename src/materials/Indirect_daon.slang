@@ -1,6 +1,8 @@
 #include <shader-types.slang>
-#include <lighting/material.slang>
-#include <lighting/normals.slang>
+#include <shading/color.slang>
+#include <shading/material.slang>
+#include <shading/math.slang>
+#include <shading/needle.slang>
 
 using namespace he2rt::shaders;
 
@@ -18,7 +20,7 @@ void main(inout MaterialShaderPayload payload) {
     Parameters params = *(Parameters*)pushConst.materials[payload.materialId].paramBuffer;
 
     Sampler2D diffuseTexture = textures[params.diffuseTextureId];
-    Sampler2D normalTexture = textures[params.normalTextureId];
+    NormalMapSamplerWithBasis normalTexture = { textures[params.normalTextureId], payload.surface.basis };
     Sampler2D transparencyTexture = textures[params.transparencyTextureId];
     Sampler2D reflectionTexture = textures[params.reflectionTextureId];
 
@@ -31,24 +33,7 @@ void main(inout MaterialShaderPayload payload) {
     float4 diffuse = diffuseTexture.SampleLevel(uv, 0);
     float transparency = payload.surface.vertexColor.w * diffuse.w * transparencyTexture.SampleLevel(uv, 0).x;
 
-    LightingParameters lightingParams;
-    lightingParams.hit = payload.hit;
-    lightingParams.world_normal = UnpackNormalMapSafe(payload.surface.basis, normalTexture.SampleLevel(uv, 0).xy);
-    LoadAlbedoTexture(lightingParams.material, pow(abs(diffuse.xyz), 2.2));
-    LoadPBRFactor(lightingParams.material, params.PBRFactor);
-
-    payload.result.contribution = float3(0.0f, 0.0f, 0.0f);
-
-    if (dot(lightingParams.hit.light_direction, lightingParams.world_normal) > 0.0f) {
-        BSDFEvaluationResult sunlight = EvaluateMaterial(lightingParams);
-        payload.result.contribution += sunlight.color;
-    }
-
-    payload.result.nextDirection = SampleMaterial(lightingParams, payload.randomness);
-    lightingParams.hit.light_direction = payload.result.nextDirection;
-    
-    BSDFEvaluationResult sampled = EvaluateMaterial(lightingParams);
-
-    float3 throughput = sampled.color / sampled.pdf;
-    payload.result.throughput = any(isnan(throughput)) || sampled.pdf < 0.0001f ? 0.0f : throughput;
+    payload.result.material.normal = normalTexture.SampleLevel(uv, 0);
+    payload.result.material.albedo = srgbToLinearSimple(diffuse.xyz);
+    loadNeedlePRM(payload.result.material, unpackPBRFactor(params.PBRFactor));
 }

@@ -1,8 +1,10 @@
 #include <shader-types.slang>
-#include <lighting/material.slang>
-#include <lighting/normals.slang>
+#include <shading/color.slang>
+#include <shading/material.slang>
+#include <shading/needle.slang>
 
 using namespace he2rt::shaders;
+using namespace bsdf::pbr;
 
 struct Parameters {
     float4 PBRFactor;
@@ -15,24 +17,7 @@ void main(inout MaterialShaderPayload payload) {
     
     Sampler2D diffuseTexture = textures[params.diffuseTextureId];
 
-    LightingParameters lightingParams;
-    lightingParams.hit = payload.hit;
-    lightingParams.world_normal = payload.surface.basis.normal;
-    LoadAlbedoTexture(lightingParams.material, diffuseTexture.SampleLevel(payload.surface.uv, 0).xyz);
-    LoadPBRFactor(lightingParams.material, params.PBRFactor);
-
-    payload.result.contribution = float3(0.0f, 0.0f, 0.0f);
-
-    if (dot(lightingParams.hit.light_direction, lightingParams.world_normal) > 0.0f) {
-        BSDFEvaluationResult sunlight = EvaluateMaterial(lightingParams);
-        payload.result.contribution += sunlight.color;
-    }
-
-    payload.result.nextDirection = SampleMaterial(lightingParams, payload.randomness);
-    lightingParams.hit.light_direction = payload.result.nextDirection;
-    
-    BSDFEvaluationResult sampled = EvaluateMaterial(lightingParams);
-
-    float3 throughput = sampled.color / sampled.pdf;
-    payload.result.throughput = any(isnan(throughput)) || sampled.pdf < 0.0001f ? 0.0f : throughput;
+    payload.result.material.normal = payload.surface.basis.normal;
+    payload.result.material.albedo = srgbToLinearSimple(diffuseTexture.SampleLevel(payload.surface.uv, 0).xyz);
+    loadNeedlePRM(payload.result.material, unpackPBRFactor(params.PBRFactor));
 }

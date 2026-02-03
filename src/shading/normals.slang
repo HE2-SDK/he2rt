@@ -5,40 +5,32 @@ float3 CorrectedZNormal(float3 normal) {
     return float3(normal.x, normal.y, sign(normal.z) * sqrt(1.0 - min(1.0, dot(normal.xy, normal.xy))));
 }
 
-float3 ComputeBinormal(float3 normal, float3 tangent) {
-    return normalize(cross(normal, tangent));
-}
-
-float3 DenormalizeNormalMap(float2 normal_map) {
-    float2 remapped = normal_map * 2.0 - 1.0;
-
-    return float3(remapped.x, remapped.y, sqrt(1.0 - min(1.0, dot(remapped, remapped))));
-}
-
-float3 ConvertNormalFromBasis(Basis basis, float3 v) {
-    return normalize(ConvertFromBasis(basis, v));
-}
-
-float3 ConvertNormalToBasis(Basis basis, float3 v) {
-    return normalize(ConvertToBasis(basis, v));
-}
-
-float3 UnpackNormalMap(Basis basis, float2 normal_map) {
-    return ConvertNormalFromBasis(basis, DenormalizeNormalMap(normal_map));
-}
-
-float3 UnpackNormalMapSafe(Basis basis, float2 normal_map) {
-    float3 result = UnpackNormalMap(basis, normal_map);
-
-    bool3 nan_check = result != result;
-
-    if (nan_check.x | nan_check.y | nan_check.z) {
-        return basis.normal;
-    }
-    else {
-        return result;
-    }
-}
+//float3 ComputeBinormal(float3 normal, float3 tangent) {
+//    return normalize(cross(normal, tangent));
+//}
+//
+//float3 DenormalizeNormalMap(float2 normal_map) {
+//    float2 remapped = normal_map * 2.0 - 1.0;
+//
+//    return float3(remapped.x, remapped.y, sqrt(1.0 - min(1.0, dot(remapped, remapped))));
+//}
+//
+//float3 UnpackNormalMap(Basis basis, float2 normal_map) {
+//    return ConvertNormalFromBasis(basis, DenormalizeNormalMap(normal_map));
+//}
+//
+//float3 UnpackNormalMapSafe(Basis basis, float2 normal_map) {
+//    float3 result = UnpackNormalMap(basis, normal_map);
+//
+//    bool3 nan_check = result != result;
+//
+//    if (nan_check.x | nan_check.y | nan_check.z) {
+//        return basis.normal;
+//    }
+//    else {
+//        return result;
+//    }
+//}
 
 // float3 BlendNormals(float3 a, float3 b) {
 //     a += float3(0, 0, 1);

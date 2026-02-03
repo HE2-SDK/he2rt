@@ -201,18 +201,19 @@ int main(void) {
             { "transparencyTextureId", 40 },
             { "reflectionTextureId", 44 },
         } } });
-        scene.addMaterialShader("Iridescence_ddpNrEa", Iridescence_ddpNrEa_shader, Iridescence_ddpNrEa_shader_sizeInBytes, { { 80, {
+        scene.addMaterialShader("Iridescence_ddpNrEa", Iridescence_ddpNrEa_shader, Iridescence_ddpNrEa_shader_sizeInBytes, { { 96, {
             { "FalloffAndLuminance", 0 },
             { "IridescenceOffset", 16 },
-            { "WPBRFactor", 32 },
-            { "diffuseTextureId", 48 },
-            { "diffuse1TextureId", 52 },
-            { "specularTextureId", 56 },
-            { "normalTextureId", 60 },
-            { "reflectionTextureId", 64 },
-            { "emissionTextureId", 68 },
-            { "transparencyTextureId", 72 },
-            { "s_LuminanceTextureId", 76 },
+            { "IridescenceMask", 32 },
+            { "WPBRFactor", 48 },
+            { "diffuseTextureId", 64 },
+            { "diffuse1TextureId", 68 },
+            { "specularTextureId", 72 },
+            { "normalTextureId", 76 },
+            { "reflectionTextureId", 80 },
+            { "emissionTextureId", 84 },
+            { "transparencyTextureId", 88 },
+            { "s_LuminanceTextureId", 92 },
         } } });
         scene.addMaterialShader("IridescenceStone_ddpNrEa", IridescenceStone_ddpNrEa_shader, IridescenceStone_ddpNrEa_shader_sizeInBytes, { { 76, {
             { "FalloffAndLuminance", 0 },
