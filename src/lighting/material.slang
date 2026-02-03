@@ -1,5 +1,5 @@
 #pragma once
-#include "sonic-team-light.slang"
+#include "light.slang"
 
 float SmoothnessToRoughness(float smoothness) {
     return max(0.01, 1.0 - smoothness);
@@ -12,13 +12,6 @@ void LoadPRM(inout MaterialParameters parameters, float4 prm) {
     parameters.cavity = prm.w;
 }
 
-void LoadPRMRoughness(inout MaterialParameters parameters, float4 prm) {
-    parameters.specular = prm.x;
-    parameters.roughness = prm.y;
-    parameters.metallic = prm.z;
-    parameters.cavity = prm.w;
-}
-
 void LoadAlbedoTexture(inout MaterialParameters parameters, float3 abd) {
     parameters.albedo = abd;
 }
@@ -26,6 +19,10 @@ void LoadAlbedoTexture(inout MaterialParameters parameters, float3 abd) {
 void LoadPRMTexture(inout MaterialParameters parameters, float4 prm) {
     prm.x *= 0.25;
     LoadPRM(parameters, prm);
+}
+
+void LoadPBRFactor(inout MaterialParameters parameters, float4 pbrFactor) {
+    LoadPRM(parameters, float4(pbrFactor.xyz, 1.0f));
 }
 
 float SpecularProbability(LightingParameters parameters) {

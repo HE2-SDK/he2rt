@@ -9,7 +9,14 @@
 #include "raytracing-engine.h"
 #include "post-processing/tonemapper/tonemapper.h"
 #include "gpu-crash-tracker.h"
-#include "common_dpn.slang.spv.h"
+#include "Common_d.slang.spv.h"
+#include "Common_dn.slang.spv.h"
+#include "Common_dp.slang.spv.h"
+#include "Common_dpn.slang.spv.h"
+#include "Emission_dpnE.slang.spv.h"
+#include "EmissionTone_dpnE.slang.spv.h"
+#include "EmissionTone_dapnE.slang.spv.h"
+#include "Indirect_daon.slang.spv.h"
 #include "Iridescence_ddpNrEa.slang.spv.h"
 #include "IridescenceStone_ddpNrEa.slang.spv.h"
 #include <filesystem>
@@ -145,16 +152,67 @@ int main(void) {
 
         std::cout << "swap chain contains " << swapchain.images.size() << " images." << std::endl;
 
-        scene.addMaterialShader("Common_dpn", common_dpn_shader, common_dpn_shader_sizeInBytes, { { 12, {
+        scene.addMaterialShader("Common_d", Common_d_shader, Common_d_shader_sizeInBytes, { { 20, {
+            { "PBRFactor", 0 },
+            { "diffuseTextureId", 16 },
+        } } });
+        scene.addMaterialShader("Common_dn", Common_dn_shader, Common_dn_shader_sizeInBytes, { { 24, {
+            { "PBRFactor", 0 },
+            { "diffuseTextureId", 16 },
+            { "normalTextureId", 20 },
+        } } });
+        scene.addMaterialShader("Common_dp", Common_dp_shader, Common_dp_shader_sizeInBytes, { { 8, {
+            { "diffuseTextureId", 0 },
+            { "specularTextureId", 4 },
+        } } });
+        scene.addMaterialShader("Common_dpn", Common_dpn_shader, Common_dpn_shader_sizeInBytes, { { 12, {
             { "diffuseTextureId", 0 },
             { "specularTextureId", 4 },
             { "normalTextureId", 8 },
         } } });
-        scene.addMaterialShader("Iridescence_ddpNrEa", Iridescence_ddpNrEa_shader, Iridescence_ddpNrEa_shader_sizeInBytes, { { 16, {
-            { "diffuseTextureId", 0 },
-            { "specularTextureId", 4 },
-            { "normalTextureId", 8 },
-            { "emissionTextureId", 12 },
+        scene.addMaterialShader("Emission_dpnE", Emission_dpnE_shader, Emission_dpnE_shader_sizeInBytes, { { 32, {
+            { "Luminance", 0 },
+            { "diffuseTextureId", 16 },
+            { "specularTextureId", 20 },
+            { "normalTextureId", 24 },
+            { "emissionTextureId", 28 },
+        } } });
+        scene.addMaterialShader("EmissionTone_dpnE", EmissionTone_dpnE_shader, EmissionTone_dpnE_shader_sizeInBytes, { { 36, {
+            { "Luminance", 0 },
+            { "diffuseTextureId", 16 },
+            { "specularTextureId", 20 },
+            { "normalTextureId", 24 },
+            { "emissionTextureId", 28 },
+            { "s_LuminanceTextureId", 32 },
+        } } });
+        scene.addMaterialShader("EmissionTone_dapnE", EmissionTone_dapnE_shader, EmissionTone_dapnE_shader_sizeInBytes, { { 36, {
+            { "Luminance", 0 },
+            { "diffuseTextureId", 16 },
+            { "specularTextureId", 20 },
+            { "normalTextureId", 24 },
+            { "emissionTextureId", 28 },
+            { "s_LuminanceTextureId", 32 },
+        } } });
+        scene.addMaterialShader("Indirect_daon", Indirect_daon_shader, Indirect_daon_shader_sizeInBytes, { { 48, {
+            { "PBRFactor", 0 },
+            { "Offset", 16 },
+            { "diffuseTextureId", 32 },
+            { "normalTextureId", 36 },
+            { "transparencyTextureId", 40 },
+            { "reflectionTextureId", 44 },
+        } } });
+        scene.addMaterialShader("Iridescence_ddpNrEa", Iridescence_ddpNrEa_shader, Iridescence_ddpNrEa_shader_sizeInBytes, { { 80, {
+            { "FalloffAndLuminance", 0 },
+            { "IridescenceOffset", 16 },
+            { "WPBRFactor", 32 },
+            { "diffuseTextureId", 48 },
+            { "diffuse1TextureId", 52 },
+            { "specularTextureId", 56 },
+            { "normalTextureId", 60 },
+            { "reflectionTextureId", 64 },
+            { "emissionTextureId", 68 },
+            { "transparencyTextureId", 72 },
+            { "s_LuminanceTextureId", 76 },
         } } });
         scene.addMaterialShader("IridescenceStone_ddpNrEa", IridescenceStone_ddpNrEa_shader, IridescenceStone_ddpNrEa_shader_sizeInBytes, { { 76, {
             { "FalloffAndLuminance", 0 },
@@ -217,8 +275,8 @@ int main(void) {
             }
         }
 
-        scene.addModelInstance("chr_sonic", Eigen::Affine3f{ Eigen::Translation3f{ 0.0f, 0.0f, 0.0f } });
-        scene.addModelInstance("cmnisl_obj_airwall02_A", Eigen::Affine3f{ Eigen::Translation3f{ 1.5f, 1.0f, -1.0f } * Eigen::AngleAxisf{ -EIGEN_PI / 5, Eigen::Vector3f::UnitY() } });
+//        scene.addModelInstance("chr_sonic", Eigen::Affine3f{ Eigen::Translation3f{ 0.0f, 0.0f, 0.0f } });
+//        scene.addModelInstance("cmnisl_obj_airwall02_A", Eigen::Affine3f{ Eigen::Translation3f{ 1.5f, 1.0f, -1.0f } * Eigen::AngleAxisf{ -EIGEN_PI / 7, Eigen::Vector3f::UnitY() } });
 
         scene.finalize();
 

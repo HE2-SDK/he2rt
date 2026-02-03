@@ -21,11 +21,15 @@ struct SurfaceParameters {
 };
 
 struct MaterialShaderPayload {
+    struct Result {
+        float3 contribution;
+        float3 throughput;
+        float3 nextDirection;
+    };
+
     uint32_t materialId;
     HitParameters hit;
     SurfaceParameters surface;
     float3 randomness;
-    float3 contribution;
-    float3 throughput;
-    float3 nextDirection;
+    Result result;
 };

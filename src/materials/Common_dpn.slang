@@ -1,6 +1,6 @@
-#include "shader-types.slang"
-#include "lighting/material.slang"
-#include "lighting/normals.slang"
+#include <shader-types.slang>
+#include <lighting/material.slang>
+#include <lighting/normals.slang>
 
 using namespace he2rt::shaders;
 
@@ -26,18 +26,18 @@ void main(inout MaterialShaderPayload payload) {
 
     //payload.color = float3(params.diffuse, params.specular, params.normal) / float3(30.0f);
 
-    payload.contribution = float3(0.0f, 0.0f, 0.0f);
+    payload.result.contribution = float3(0.0f, 0.0f, 0.0f);
 
     if (dot(lightingParams.hit.light_direction, lightingParams.world_normal) > 0.0f) {
         BSDFEvaluationResult sunlight = EvaluateMaterial(lightingParams);
-        payload.contribution += sunlight.color;
+        payload.result.contribution += sunlight.color;
     }
 
-    payload.nextDirection = SampleMaterial(lightingParams, payload.randomness);
-    lightingParams.hit.light_direction = payload.nextDirection;
-
+    payload.result.nextDirection = SampleMaterial(lightingParams, payload.randomness);
+    lightingParams.hit.light_direction = payload.result.nextDirection;
+    
     BSDFEvaluationResult sampled = EvaluateMaterial(lightingParams);
 
     float3 throughput = sampled.color / sampled.pdf;
-    payload.throughput = any(isnan(throughput)) || sampled.pdf < 0.0001f ? 0.0f : throughput;
+    payload.result.throughput = any(isnan(throughput)) || sampled.pdf < 0.0001f ? 0.0f : throughput;
 }

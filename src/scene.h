@@ -366,10 +366,12 @@ namespace he2rt {
 		Scene(Device& device);
 
 		void addModelContexts(const std::string& name, auto contexts) {
-			auto modelId = models.size();
-			auto& model = models.emplace_back(*this, contexts);
-			shaderModels.emplace_back((shaders::Mesh*)model.meshBuffer.deviceAddress);
-			modelIdsByName[name] = modelId;
+			if (contexts.get_field<"meshGroups">().as_pointer().get().value().as_carray()[0].as_pointer().get().value().as_structure().get_field<"opaqueMeshCount">().as_primitive().as<unsigned int>() > 0) {
+				auto modelId = models.size();
+				auto& model = models.emplace_back(*this, contexts);
+				shaderModels.emplace_back((shaders::Mesh*)model.meshBuffer.deviceAddress);
+				modelIdsByName[name] = modelId;
+			}
 		}
 
 		template<bool byteswap_offsets = true, bool relative_offsets = false>

@@ -1,6 +1,6 @@
-#include "shader-types.slang"
-#include "lighting/material.slang"
-#include "lighting/normals.slang"
+#include <shader-types.slang>
+#include <lighting/material.slang>
+#include <lighting/normals.slang>
 
 using namespace he2rt::shaders;
 
@@ -15,6 +15,7 @@ struct Parameters {
     uint32_t reflectionTextureId;
     uint32_t emissionTextureId;
     uint32_t transparencyTextureId;
+    uint32_t s_LuminanceTextureId;
 };
 
 float2 calculateCameraBias(int rightFactor, int upFactor, int2 offsets) {
@@ -27,7 +28,7 @@ float2 calculateCameraBias(int rightFactor, int upFactor, int2 offsets) {
     return float2(bias) + float2(offsets);
 }
 
-static const float2 ambient_color = float2(0.51f, 0.4f);
+static const float3 ambient_color = float3(1.0f, 1.0f, 1.0f);
 
 [shader("callable")]
 void main(inout MaterialShaderPayload payload) {
@@ -49,12 +50,14 @@ void main(inout MaterialShaderPayload payload) {
     Sampler2D reflectionTexture = textures[params.reflectionTextureId];
     Sampler2D emissionTexture = textures[params.emissionTextureId];
     Sampler2D transparencyTexture = textures[params.transparencyTextureId];
+    Sampler2D luminanceTexture = textures[params.s_LuminanceTextureId];
 
     float4 diffuse = diffuseTexture.SampleLevel(payload.surface.uv, 0);
-    float4 diffuse1 = diffuse1Texture.SampleLevel(payload.surface.uv, 0);
+    float4 diffuse1 = diffuse1Texture.SampleLevel(payload.surface.uv2, 0);
     float4 specular = specularTexture.SampleLevel(payload.surface.uv, 0);
     float3 emission = emissionTexture.SampleLevel(payload.surface.uv, 0).xyz;
     float transparency = transparencyTexture.SampleLevel(payload.surface.uv, 0).x;
+    float luminanceTone = luminanceTexture.SampleLevel(float2(0.75, 0.5), 0).x;
 
     float3 normal0 = UnpackNormalMapSafe(payload.surface.basis, normalTexture.SampleLevel(payload.surface.uv, 0).xy);
     float3 normal1 = UnpackNormalMapSafe(payload.surface.basis, normalTexture.SampleLevel(payload.surface.uv2, 0).xy);
@@ -82,51 +85,53 @@ void main(inout MaterialShaderPayload payload) {
     float iridescenceFresnel = fresnel0 * fresnel1;
     float3 iridescence = iridescence0 * iridescence1;
 
-    float4 diffuseTotal = diffuse + float4(iridescence, 0.0f);
-    float3 diffuseBlended = abs(lerp(diffuseTotal.xyz, diffuse1.xyz, blendFactor));
+    float3 diffuseTotal = diffuse.xyz + iridescence;
+    float3 diffuseBlended = pow(abs(lerp(diffuseTotal.xyz, diffuse1.xyz, blendFactor)), 2.2f);
 
     MaterialParameters materialParams;
-    LoadAlbedoTexture(materialParams, diffuse.xyz);
+    //LoadAlbedoTexture(materialParams, diffuse.xyz);
     LoadPRM(materialParams, specular);
 
     float pbrFactor0Roughness = SmoothnessToRoughness(pbrFactor0Smoothness);
     float pbrFactor1Roughness = SmoothnessToRoughness(pbrFactor1Smoothness);
 
-    float3 textureF0 = lerp(materialParams.specular, diffuse.xyz, materialParams.metallic);
-    float3 pbrFactor0F0 = lerp(0.1, diffuse.xyz, pbrFactor0Metallic);
-    float3 pbrFactor1F0 = lerp(0.1, diffuse1.xyz, pbrFactor1Metallic);
+    //float3 textureF0 = lerp(materialParams.specular, diffuseTotal.xyz, materialParams.metallic);
+    //float3 pbrFactor0F0 = lerp(0.1, diffuseTotal.xyz, pbrFactor0Metallic);
+    //float3 pbrFactor1F0 = lerp(0.1, diffuse1.xyz, pbrFactor1Metallic);
 
-    float iridescenceSpecular = lerp(specular.x, 0.1, iridescenceFresnel);
-    float3 iridescenceF0 = lerp(textureF0, pbrFactor0F0, iridescenceFresnel);
+    float iridescenceSpecular = lerp(materialParams.specular, 0.1, iridescenceFresnel);
+    //float3 iridescenceF0 = lerp(textureF0, pbrFactor0F0, iridescenceFresnel);
     float iridescenceRoughness = lerp(materialParams.roughness, pbrFactor0Roughness, iridescenceFresnel);
     float iridescenceMetallic = lerp(materialParams.metallic, pbrFactor0Metallic, iridescenceFresnel);
 
     float totalSpecular = lerp(iridescenceSpecular, 0.1, blendFactor);
-    float3 totalF0 = lerp(iridescenceF0, pbrFactor1F0, blendFactor);
+    //float3 totalF0 = lerp(iridescenceF0, pbrFactor1F0, blendFactor);
     float totalRoughness = lerp(iridescenceRoughness, pbrFactor1Roughness, blendFactor);
     float totalMetallic = lerp(iridescenceMetallic, pbrFactor1Metallic, blendFactor);
 
-    float transparencyFromTexture = transparency < diffuseTotal.w ? diffuseTotal.w : 0.0f;
-    float transparencyFromMatAnim = abs(diffuseTotal.w) < (9.99999997e-007 + ambient_color.y) ? 0 : saturate(transparencyFromTexture + 2 * ambient_color.x - 1);
-
     LightingParameters lightingParams;
     lightingParams.hit = payload.hit;
-    lightingParams.world_normal = worldNormal;
+    lightingParams.world_normal = normal0;
     LoadAlbedoTexture(lightingParams.material, diffuseBlended);
-    LoadPRMRoughness(lightingParams.material, float4(totalSpecular, totalRoughness, totalMetallic, 0.0));
+    lightingParams.material.specular = totalSpecular;
+    lightingParams.material.roughness = totalRoughness;
+    lightingParams.material.metallic = totalMetallic;
+    lightingParams.material.cavity = 0.0f;
 
-    payload.contribution = (iridescence * (1 - blendFactor) * iridescenceLuminance + emission * (1 - blendFactor) * emissionLuminance) * transparencyFromMatAnim;
+    payload.result.contribution
+        = iridescence * (1 - blendFactor) * iridescenceLuminance
+        + emission * (1 - blendFactor) * emissionLuminance * ambient_color * transparency * luminanceTone;
 
     if (dot(lightingParams.hit.light_direction, lightingParams.world_normal) > 0.0f) {
         BSDFEvaluationResult sunlight = EvaluateMaterial(lightingParams);
-        payload.contribution += sunlight.color;
+        payload.result.contribution += sunlight.color;
     }
-    
-    payload.nextDirection = SampleMaterial(lightingParams, payload.randomness);
-    lightingParams.hit.light_direction = payload.nextDirection;
-    
+
+    payload.result.nextDirection = SampleMaterial(lightingParams, payload.randomness);
+    lightingParams.hit.light_direction = payload.result.nextDirection;
+
     BSDFEvaluationResult sampled = EvaluateMaterial(lightingParams);
-    
+
     float3 throughput = sampled.color / sampled.pdf;
-    payload.throughput = any(isnan(throughput)) || sampled.pdf < 0.0001f ? 0.0f : throughput;
+    payload.result.throughput = any(isnan(throughput)) || sampled.pdf < 0.0001f ? 0.0f : throughput;
 }

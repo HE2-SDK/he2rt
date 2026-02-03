@@ -121,7 +121,7 @@ float3 offsetRay(in float3 p, in float3 n)
 float3 pathTrace(RayDesc ray, inout uint seed) {
     PathTracingState state = {};
 
-    for (int depth = 0; depth < 1; depth++) {
+    for (int depth = 0; depth < 4; depth++) {
         HitPayload payload;
         payload.color = float3(0, 0, 0);
         payload.weight = 1;
@@ -159,10 +159,10 @@ float3 pathTrace(RayDesc ray, inout uint seed) {
         CallShader<MaterialShaderPayload>(material.shaderId, materialShaderPayload);
 
         if (!testShadowSER(hitParameters.world_position, surfaceParameters.basis.normal, hitParameters.light_direction)) {
-            state.radiance += materialShaderPayload.contribution * state.throughput;
+            state.radiance += materialShaderPayload.result.contribution * state.throughput;
         }
 
-        state.throughput *= materialShaderPayload.throughput;
+        state.throughput *= materialShaderPayload.result.throughput;
 
         // Russian roulette
         float rrPcont = min(max(state.throughput.x, max(state.throughput.y, state.throughput.z)) + 0.001F, 0.95F);
@@ -171,7 +171,7 @@ float3 pathTrace(RayDesc ray, inout uint seed) {
         state.throughput /= rrPcont;
 
         ray.Origin = offsetRay(hitParameters.world_position, surfaceParameters.basis.normal);
-        ray.Direction = materialShaderPayload.nextDirection;
+        ray.Direction = materialShaderPayload.result.nextDirection;
     }
 
     return state.radiance;

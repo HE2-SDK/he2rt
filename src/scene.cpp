@@ -403,8 +403,12 @@ namespace he2rt {
 
                         auto* param = (shaders::Sampler*)&shaderParams[offsetIt->second];
 
-                        if (!textureIdsByName.contains(name))
-                            throw std::runtime_error{ std::string{ "Unknown texture " } + name };
+                        if (!textureIdsByName.contains(name)) {
+                            std::cout << "WARN: Unknown texture " << name << std::endl;
+                            param->textureId = 0;
+                            continue;
+                            //throw std::runtime_error{ std::string{ "Unknown texture " } + name };
+                        }
 
                         param->textureId = textureIdsByName[name];
 
@@ -447,6 +451,13 @@ namespace he2rt {
                             for (size_t j = 0; j < values.get_length(); j++) {
                                 auto singleValue = values[j].as_carray();
 
+                                std::cout << name << ": "
+                                    << singleValue[0].as_primitive().as<float>() << " "
+                                    << singleValue[1].as_primitive().as<float>() << " "
+                                    << singleValue[2].as_primitive().as<float>() << " "
+                                    << singleValue[3].as_primitive().as<float>() << " "
+                                    << std::endl;
+
                                 shaderParam[j] = {
                                     singleValue[0].as_primitive().as<float>(),
                                     singleValue[1].as_primitive().as<float>(),
@@ -475,6 +486,13 @@ namespace he2rt {
                             for (size_t j = 0; j < values.get_length(); j++) {
                                 auto singleValue = values[j].as_carray();
 
+                                std::cout << name << ": "
+                                    << singleValue[0].as_primitive().as<unsigned int>() << " "
+                                    << singleValue[1].as_primitive().as<unsigned int>() << " "
+                                    << singleValue[2].as_primitive().as<unsigned int>() << " "
+                                    << singleValue[3].as_primitive().as<unsigned int>() << " "
+                                    << std::endl;
+
                                 shaderParam[j] = {
                                     singleValue[0].as_primitive().as<unsigned int>(),
                                     singleValue[1].as_primitive().as<unsigned int>(),
@@ -502,6 +520,13 @@ namespace he2rt {
 
                             for (size_t j = 0; j < values.get_length(); j++) {
                                 auto singleValue = values[j].as_carray();
+
+                                std::cout << name << ": "
+                                    << singleValue[0].as_primitive().as<bool>() << " "
+                                    << singleValue[1].as_primitive().as<bool>() << " "
+                                    << singleValue[2].as_primitive().as<bool>() << " "
+                                    << singleValue[3].as_primitive().as<bool>() << " "
+                                    << std::endl;
 
                                 shaderParam[j] = {
                                     singleValue[0].as_primitive().as<bool>(),
@@ -861,6 +886,9 @@ namespace he2rt {
 
     void Scene::addStandardTexture(const std::string& name, uint8_t* data, size_t size) {
         DDSImageCreateInfo ddsImage = readDDSImage(data, size);
+
+        if (ddsImage.ddsImage.mipmaps.size() == 0)
+            return;
 
         addTexture(name, ddsImage, ddsImage.ddsImage.mipmaps[0].data(), ddsImage.ddsImage.mipmaps[0].size_bytes());
     }
