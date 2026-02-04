@@ -29,6 +29,7 @@ namespace he2rt {
             vk::KHRAccelerationStructureExtensionName,
             vk::KHRRayTracingPipelineExtensionName,
             vk::KHRDeferredHostOperationsExtensionName,
+            vk::EXTHdrMetadataExtensionName,
             vk::NVRayTracingInvocationReorderExtensionName,
             vk::NVDeviceDiagnosticCheckpointsExtensionName,
             vk::NVDeviceDiagnosticsConfigExtensionName,
@@ -77,7 +78,10 @@ namespace he2rt {
 
         std::optional<vk::SurfaceFormatKHR> selectedFormat{};
         for (auto& format : surfaceFormats) {
-            if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+            //if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+            //    selectedFormat = format;
+            //}
+            if (format.format == vk::Format::eA2B10G10R10UnormPack32 && format.colorSpace == vk::ColorSpaceKHR::eHdr10St2084EXT) {
                 selectedFormat = format;
             }
         }

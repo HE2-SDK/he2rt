@@ -76,8 +76,8 @@ Eigen::Quaternionf camRot{ Eigen::Quaternionf::Identity() };
 bool done{};
 float lastX = 1920 / 2, lastY = 1080 / 2;
 float sens = 0.005f;
-float moveSensSlow = 0.005f;
-float moveSens = 1.0f;
+float moveSensSlow = 0.025f;
+float moveSens = 5.0f;
 void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
     if (!done) {
         lastX = xpos;
@@ -276,8 +276,9 @@ int main(void) {
             }
         }
 
-//        scene.addModelInstance("chr_sonic", Eigen::Affine3f{ Eigen::Translation3f{ 0.0f, 0.0f, 0.0f } });
-//        scene.addModelInstance("cmnisl_obj_airwall02_A", Eigen::Affine3f{ Eigen::Translation3f{ 1.5f, 1.0f, -1.0f } * Eigen::AngleAxisf{ -EIGEN_PI / 7, Eigen::Vector3f::UnitY() } });
+        //scene.addModelInstance("boss_dragon01", Eigen::Affine3f{ Eigen::Translation3f{ 0.0f, 0.0f, 0.0f } });
+        //scene.addModelInstance("chr_sonic", Eigen::Affine3f{ Eigen::Translation3f{ 0.0f, 0.0f, 0.0f } });
+        //scene.addModelInstance("cmnisl_obj_airwall02_A", Eigen::Affine3f{ Eigen::Translation3f{ 1.5f, 1.0f, -1.0f } * Eigen::AngleAxisf{ -EIGEN_PI / 7, Eigen::Vector3f::UnitY() } });
 
         scene.finalize();
 
@@ -291,7 +292,7 @@ int main(void) {
         std::vector<vk::raii::CommandBuffer> commandBuffers{};
 
         GBuffer gbuffer{ device, swapchain, vk::Format::eR32G32B32A32Sfloat };
-        GBuffer tonemappedGbuffer{ device, swapchain, vk::Format::eB8G8R8A8Unorm };
+        GBuffer tonemappedGbuffer{ device, swapchain, vk::Format::eA2B10G10R10UnormPack32 };
         Sampler gbufferSampler{ device.createSampler({}) };
         vk::ImageSubresourceRange colorRange{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
 
@@ -383,15 +384,6 @@ int main(void) {
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
 
-            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-                camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * -Eigen::Vector3f::UnitZ();
-            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-                camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * Eigen::Vector3f::UnitZ();
-            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-                camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * Eigen::Vector3f::UnitX();
-            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-                camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * -Eigen::Vector3f::UnitX();
-
             ImGui_ImplVulkan_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
@@ -407,7 +399,17 @@ int main(void) {
 
             std::chrono::time_point<std::chrono::high_resolution_clock> frameStart{ clock.now() };
             auto frameTime = frameStart - frameStarts[currentFrame];
+            auto frameTimeF = static_cast<float>(frameTime.count()) / static_cast<float>(inFlightFrameCount);
             frameStarts[currentFrame] = frameStart;
+
+            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+                camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * frameTimeF / (1.0e9f / 60.0f) * -Eigen::Vector3f::UnitZ();
+            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+                camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * frameTimeF / (1.0e9f / 60.0f) * Eigen::Vector3f::UnitZ();
+            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+                camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * frameTimeF / (1.0e9f / 60.0f) * Eigen::Vector3f::UnitX();
+            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+                camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * frameTimeF / (1.0e9f / 60.0f) * -Eigen::Vector3f::UnitX();
 
             auto submitSemaphore = vk::Semaphore{ swapchain.imageReadySemaphores[imageIndex] };
 
@@ -452,7 +454,6 @@ int main(void) {
             } };
             commandBuffer.beginRendering({ {}, renderArea, 1, 0, colorAttachments });
 
-            auto frameTimeF = static_cast<float>(frameTime.count()) / static_cast<float>(inFlightFrameCount);
             ImGui::Text("Frame Time: %f", frameTimeF / 1.0e6f);
             ImGui::Text("FPS: %f", 1.0e9f / frameTimeF);
             ImGui::Render();

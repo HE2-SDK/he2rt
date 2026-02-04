@@ -64,6 +64,7 @@ namespace he2rt {
                 vk::KHRSpirv14ExtensionName,
                 vk::KHRAccelerationStructureExtensionName,
                 vk::KHRBufferDeviceAddressExtensionName,
+                vk::EXTHdrMetadataExtensionName,
                 vk::NVRayTracingInvocationReorderExtensionName,
                 vk::NVDeviceDiagnosticCheckpointsExtensionName,
                 vk::NVDeviceDiagnosticsConfigExtensionName,

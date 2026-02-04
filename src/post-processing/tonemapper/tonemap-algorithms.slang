@@ -121,7 +121,7 @@ namespace he2rt::shaders::tonemapper {
     From https://github.com/TheRealMJP/BakingLab/blob/master/BakingLab/ACES.hlsl,
     via https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
     -------------------------------------------------------------------------------------------------*/
-    inline float3 tonemapACES(float3 color)
+    inline float3 tonemapACESLinear(float3 color)
     {
         // Input transform
         const float3x3 ACESInputMat = float3x3(0.59719F, 0.07600F, 0.02840F,   // Row 1
@@ -138,7 +138,12 @@ namespace he2rt::shaders::tonemapper {
             -0.53108F, 1.10813F, -0.07276F,  //
             -0.07367F, -0.00605F, 1.07602F);
         color = mul(color, ACESOutputMat);
-        return toSrgb(color);
+        return color;
+    }
+
+    inline float3 tonemapACES(float3 color)
+    {
+        return toSrgb(tonemapACESLinear(color));
     }
 
     /*-------------------------------------------------------------------------------------------------
@@ -211,6 +216,37 @@ namespace he2rt::shaders::tonemapper {
             color = lerp(color, float3(newPeak), float3(g));
         }
         return toSrgb(color);
+    }
+
+    inline float3 oetfPQ(float3 linear) {
+        const float m1 = 2610.0 / 16384.0;
+        const float m2 = 2523.0 / 4096.0 * 128.0;
+        const float c1 = 3424.0 / 4096.0;
+        const float c2 = 2413.0 / 4096.0 * 32.0;
+        const float c3 = 2392.0 / 4096.0 * 32.0;
+
+        float3 Y = pow(saturate(linear / 10000), float3(m1));
+        return pow((c1 + c2 * Y) / (1.0 + c3 * Y), float3(m2));
+    }
+
+    inline float3 tonemapACESHDR(float3 color, float nits) {
+        static const float3 bt2020Luma = float3(0.2627, 0.6780, 0.0593);
+
+        const float3x3 bt709ToBt2020 = float3x3(
+            0.6274, 0.3293, 0.0433,
+            0.0691, 0.9195, 0.0114,
+            0.0164, 0.0880, 0.8956
+        );
+
+        const float3 colorBT2020 = mul(bt709ToBt2020, color);
+
+        const float3 Y = float3(max(dot(colorBT2020, bt2020Luma), 1e-6));
+        const float3 Ytm = tonemapACESLinear(Y);
+        const float3 colorACES = colorBT2020 * (Ytm / Y);
+        //const float3 colorACES = tonemapACESLinear(colorBT2020);
+        const float3 colorNits = colorACES * nits;
+        const float3 colorPQ = oetfPQ(colorNits);
+        return colorPQ;
     }
 
     // Computes the CIE 1960 chromaticity coordinates of a light source given

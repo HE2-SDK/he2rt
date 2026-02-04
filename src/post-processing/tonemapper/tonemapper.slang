@@ -72,27 +72,29 @@ void Tonemap(uint2 globalThreadID: SV_DispatchThreadID)
 
   // Get the color from the input texture
   float4 color = InColorBuffer[int2(globalThreadID.xy)];
+  //color = mul(getColorCorrectionMatrix(tm.exposure, tm.temperature, tm.tint), color);
+  // // If the tonemapper is active
+  // if(tm.isActive == 1)
+  // {
+  //   // If auto-exposure is enabled
+  //   if(tm.autoExposure == 1)
+  //   {
+  //     // Apply auto-exposure compensation
+  //     // OutLuminance[0] contains the target luminance calculated from histogram analysis
+  //     // We want to expose the scene so that the target luminance maps to middle grey (0.18)
+  //     const float middleGrey         = 0.18f;
+  //     float       exposureMultiplier = middleGrey / max(0.001f, OutLuminance[0]);
+  //     color.xyz *= exposureMultiplier;
+  //   }
+  // 
+  //   // Apply the tonemapping pipeline
+  //   color.xyz = applyTonemap(tm, color.xyz, float2(globalThreadID.xy), float2(imageSize));
+  // }
 
-  // If the tonemapper is active
-  if(tm.isActive == 1)
-  {
-    // If auto-exposure is enabled
-    if(tm.autoExposure == 1)
-    {
-      // Apply auto-exposure compensation
-      // OutLuminance[0] contains the target luminance calculated from histogram analysis
-      // We want to expose the scene so that the target luminance maps to middle grey (0.18)
-      const float middleGrey         = 0.18f;
-      float       exposureMultiplier = middleGrey / max(0.001f, OutLuminance[0]);
-      color.xyz *= exposureMultiplier;
-    }
-
-    // Apply the tonemapping pipeline
-    color.xyz = applyTonemap(tm, color.xyz, float2(globalThreadID.xy), float2(imageSize));
-  }
+  color.xyz = mul(getColorCorrectionMatrix(tm.exposure, tm.temperature, tm.tint), color.xyz);
 
   // Write the color to the output texture
-  outImage[int2(globalThreadID.xy)] = color;
+  outImage[int2(globalThreadID.xy)] = float4(tonemapACESHDR(color.xyz, 1000.0f), color.w);
 }
 
 
