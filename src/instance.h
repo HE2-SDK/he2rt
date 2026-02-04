@@ -10,6 +10,8 @@ namespace he2rt {
 	class Instance {
 
 		static vk::raii::Instance createInstance(vk::raii::Context& context);
+
+#ifdef _DEBUG
 		static vk::DebugUtilsMessengerCreateInfoEXT createDebugUtilsMessengerCreateInfo();
 
 		static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
@@ -18,10 +20,13 @@ namespace he2rt {
 			const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
 			void* pUserData
 		);
+#endif
 
 	public:
 		vk::raii::Instance instance;
+#ifdef _DEBUG
 		vk::raii::DebugUtilsMessengerEXT debugMessenger;
+#endif
 
 		Instance(vk::raii::Context& context);
 

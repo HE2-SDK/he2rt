@@ -5,17 +5,22 @@
 namespace he2rt {
     Instance::Instance(vk::raii::Context& context)
         : instance{ createInstance(context) }
+#ifdef _DEBUG
         , debugMessenger{ instance, createDebugUtilsMessengerCreateInfo() }
+#endif
     {}
 
 	vk::raii::Instance Instance::createInstance(vk::raii::Context& context) {
         uint32_t glfwExtensionCount;
         auto glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
-        std::vector<const char*> layers{ "VK_LAYER_KHRONOS_validation" };
+        std::vector<const char*> layers{};
         std::vector<const char*> extensions{ glfwExtensions, glfwExtensions + glfwExtensionCount };
 
+#ifdef _DEBUG
+        layers.push_back("VK_LAYER_KHRONOS_validation");
         extensions.push_back(vk::EXTDebugUtilsExtensionName);
+#endif
         extensions.push_back(vk::EXTSwapchainColorSpaceExtensionName);
 
         vk::ApplicationInfo appInfo{
@@ -32,13 +37,26 @@ namespace he2rt {
             extensions,
         };
 
+#ifdef _DEBUG
         vk::DebugUtilsMessengerCreateInfoEXT debugMessengerCreateInfo = createDebugUtilsMessengerCreateInfo();
+#endif
 
-        vk::StructureChain<vk::InstanceCreateInfo, vk::DebugUtilsMessengerCreateInfoEXT> createInfoChain{ createInfo, debugMessengerCreateInfo };
+        vk::StructureChain<
+            vk::InstanceCreateInfo
+#ifdef _DEBUG
+            , vk::DebugUtilsMessengerCreateInfoEXT
+#endif
+        > createInfoChain{
+            createInfo
+#ifdef _DEBUG
+            , debugMessengerCreateInfo
+#endif
+        };
 
         return { context, createInfoChain.get<vk::InstanceCreateInfo>() };
 	}
 
+#ifdef _DEBUG
     vk::DebugUtilsMessengerCreateInfoEXT Instance::createDebugUtilsMessengerCreateInfo() {
         return {
             {},
@@ -48,6 +66,7 @@ namespace he2rt {
             nullptr,
         };
     }
+#endif
 
     std::optional<PhysicalDevice> Instance::findPhysicalDevice(const vk::Extent2D& desiredExtent, vk::SurfaceKHR surface, bool HDR) {
         for (auto& physicalDevice : instance.enumeratePhysicalDevices()) {
@@ -113,6 +132,7 @@ namespace he2rt {
         return std::nullopt;
     }
 
+#ifdef _DEBUG
     VKAPI_ATTR VkBool32 VKAPI_CALL Instance::debugCallback(
         vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
         vk::DebugUtilsMessageTypeFlagsEXT messageType,
@@ -124,4 +144,5 @@ namespace he2rt {
 
         return VK_FALSE;
     }
+#endif
 }

@@ -128,399 +128,404 @@ int main(void) {
         return -1;
     }
 
-    int width, height;
-    glfwGetFramebufferSize(window, &width, &height);
+    try {
+        int width, height;
+        glfwGetFramebufferSize(window, &width, &height);
 
-    {
-        vk::raii::Context context{};
-        Instance instance{ context };
+        {
+            vk::raii::Context context{};
+            Instance instance{ context };
 
-        VULKAN_HPP_DEFAULT_DISPATCHER.init(static_cast<vk::Instance>(instance.instance));
+            VULKAN_HPP_DEFAULT_DISPATCHER.init(static_cast<vk::Instance>(instance.instance));
 
-        vk::Extent2D desiredExtent{ (uint32_t)width, (uint32_t)height };
+            vk::Extent2D desiredExtent{ (uint32_t)width, (uint32_t)height };
 
-        auto surface = createSurface(instance, window);
-        auto maybePhysicalDevice = instance.findPhysicalDevice(desiredExtent, surface, useHDR);
+            auto surface = createSurface(instance, window);
+            auto maybePhysicalDevice = instance.findPhysicalDevice(desiredExtent, surface, useHDR);
 
-        if (!maybePhysicalDevice.has_value())
-            throw std::runtime_error{ "can't find suitable device" };
+            if (!maybePhysicalDevice.has_value())
+                throw std::runtime_error{ "can't find suitable device" };
 
 #ifdef _DEBUG
-        GpuCrashTracker gpuCrashTracker{};
+            GpuCrashTracker gpuCrashTracker{};
 #endif
 
-        auto physicalDevice = std::move(*maybePhysicalDevice);
-        auto device = physicalDevice.createDevice();
+            auto physicalDevice = std::move(*maybePhysicalDevice);
+            auto device = physicalDevice.createDevice();
 
-        VULKAN_HPP_DEFAULT_DISPATCHER.init(static_cast<vk::Device>(device.device));
+            VULKAN_HPP_DEFAULT_DISPATCHER.init(static_cast<vk::Device>(device.device));
 
-        auto swapchain = device.createSwapchain(desiredExtent, surface);
-        Scene scene{ device };
+            auto swapchain = device.createSwapchain(desiredExtent, surface);
+            Scene scene{ device };
 
-        scene.addMaterialShader("Common_d", Common_d_shader, Common_d_shader_sizeInBytes, { { 20, {
-            { "PBRFactor", 0 },
-            { "diffuseTextureId", 16 },
-        } } });
-        scene.addMaterialShader("Common_dn", Common_dn_shader, Common_dn_shader_sizeInBytes, { { 24, {
-            { "PBRFactor", 0 },
-            { "diffuseTextureId", 16 },
-            { "normalTextureId", 20 },
-        } } });
-        scene.addMaterialShader("Common_dp", Common_dp_shader, Common_dp_shader_sizeInBytes, { { 8, {
-            { "diffuseTextureId", 0 },
-            { "specularTextureId", 4 },
-        } } });
-        scene.addMaterialShader("Common_dpn", Common_dpn_shader, Common_dpn_shader_sizeInBytes, { { 12, {
-            { "diffuseTextureId", 0 },
-            { "specularTextureId", 4 },
-            { "normalTextureId", 8 },
-        } } });
-        scene.addMaterialShader("Emission_dpnE", Emission_dpnE_shader, Emission_dpnE_shader_sizeInBytes, { { 32, {
-            { "Luminance", 0 },
-            { "diffuseTextureId", 16 },
-            { "specularTextureId", 20 },
-            { "normalTextureId", 24 },
-            { "emissionTextureId", 28 },
-        } } });
-        scene.addMaterialShader("EmissionTone_dpnE", EmissionTone_dpnE_shader, EmissionTone_dpnE_shader_sizeInBytes, { { 36, {
-            { "Luminance", 0 },
-            { "diffuseTextureId", 16 },
-            { "specularTextureId", 20 },
-            { "normalTextureId", 24 },
-            { "emissionTextureId", 28 },
-            { "s_LuminanceTextureId", 32 },
-        } } });
-        scene.addMaterialShader("EmissionTone_dapnE", EmissionTone_dapnE_shader, EmissionTone_dapnE_shader_sizeInBytes, { { 36, {
-            { "Luminance", 0 },
-            { "diffuseTextureId", 16 },
-            { "specularTextureId", 20 },
-            { "normalTextureId", 24 },
-            { "emissionTextureId", 28 },
-            { "s_LuminanceTextureId", 32 },
-        } } });
-        scene.addMaterialShader("Indirect_daon", Indirect_daon_shader, Indirect_daon_shader_sizeInBytes, { { 48, {
-            { "PBRFactor", 0 },
-            { "Offset", 16 },
-            { "diffuseTextureId", 32 },
-            { "normalTextureId", 36 },
-            { "transparencyTextureId", 40 },
-            { "reflectionTextureId", 44 },
-        } } });
-        scene.addMaterialShader("Iridescence_ddpNrEa", Iridescence_ddpNrEa_shader, Iridescence_ddpNrEa_shader_sizeInBytes, { { 96, {
-            { "FalloffAndLuminance", 0 },
-            { "IridescenceOffset", 16 },
-            { "IridescenceMask", 32 },
-            { "WPBRFactor", 48 },
-            { "diffuseTextureId", 64 },
-            { "diffuse1TextureId", 68 },
-            { "specularTextureId", 72 },
-            { "normalTextureId", 76 },
-            { "reflectionTextureId", 80 },
-            { "emissionTextureId", 84 },
-            { "transparencyTextureId", 88 },
-            { "s_LuminanceTextureId", 92 },
-        } } });
-        scene.addMaterialShader("IridescenceStone_ddpNrEa", IridescenceStone_ddpNrEa_shader, IridescenceStone_ddpNrEa_shader_sizeInBytes, { { 76, {
-            { "FalloffAndLuminance", 0 },
-            { "IridescenceOffset", 16 },
-            { "WPBRFactor", 32 },
-            { "diffuseTextureId", 48 },
-            { "diffuse1TextureId", 52 },
-            { "specularTextureId", 56 },
-            { "normalTextureId", 60 },
-            { "reflectionTextureId", 64 },
-            { "emissionTextureId", 68 },
-            { "transparencyTextureId", 72 },
-        } } });
+            scene.addMaterialShader("Common_d", Common_d_shader, Common_d_shader_sizeInBytes, { { 20, {
+                { "PBRFactor", 0 },
+                { "diffuseTextureId", 16 },
+            } } });
+            scene.addMaterialShader("Common_dn", Common_dn_shader, Common_dn_shader_sizeInBytes, { { 24, {
+                { "PBRFactor", 0 },
+                { "diffuseTextureId", 16 },
+                { "normalTextureId", 20 },
+            } } });
+            scene.addMaterialShader("Common_dp", Common_dp_shader, Common_dp_shader_sizeInBytes, { { 8, {
+                { "diffuseTextureId", 0 },
+                { "specularTextureId", 4 },
+            } } });
+            scene.addMaterialShader("Common_dpn", Common_dpn_shader, Common_dpn_shader_sizeInBytes, { { 12, {
+                { "diffuseTextureId", 0 },
+                { "specularTextureId", 4 },
+                { "normalTextureId", 8 },
+            } } });
+            scene.addMaterialShader("Emission_dpnE", Emission_dpnE_shader, Emission_dpnE_shader_sizeInBytes, { { 32, {
+                { "Luminance", 0 },
+                { "diffuseTextureId", 16 },
+                { "specularTextureId", 20 },
+                { "normalTextureId", 24 },
+                { "emissionTextureId", 28 },
+            } } });
+            scene.addMaterialShader("EmissionTone_dpnE", EmissionTone_dpnE_shader, EmissionTone_dpnE_shader_sizeInBytes, { { 36, {
+                { "Luminance", 0 },
+                { "diffuseTextureId", 16 },
+                { "specularTextureId", 20 },
+                { "normalTextureId", 24 },
+                { "emissionTextureId", 28 },
+                { "s_LuminanceTextureId", 32 },
+            } } });
+            scene.addMaterialShader("EmissionTone_dapnE", EmissionTone_dapnE_shader, EmissionTone_dapnE_shader_sizeInBytes, { { 36, {
+                { "Luminance", 0 },
+                { "diffuseTextureId", 16 },
+                { "specularTextureId", 20 },
+                { "normalTextureId", 24 },
+                { "emissionTextureId", 28 },
+                { "s_LuminanceTextureId", 32 },
+            } } });
+            scene.addMaterialShader("Indirect_daon", Indirect_daon_shader, Indirect_daon_shader_sizeInBytes, { { 48, {
+                { "PBRFactor", 0 },
+                { "Offset", 16 },
+                { "diffuseTextureId", 32 },
+                { "normalTextureId", 36 },
+                { "transparencyTextureId", 40 },
+                { "reflectionTextureId", 44 },
+            } } });
+            scene.addMaterialShader("Iridescence_ddpNrEa", Iridescence_ddpNrEa_shader, Iridescence_ddpNrEa_shader_sizeInBytes, { { 96, {
+                { "FalloffAndLuminance", 0 },
+                { "IridescenceOffset", 16 },
+                { "IridescenceMask", 32 },
+                { "WPBRFactor", 48 },
+                { "diffuseTextureId", 64 },
+                { "diffuse1TextureId", 68 },
+                { "specularTextureId", 72 },
+                { "normalTextureId", 76 },
+                { "reflectionTextureId", 80 },
+                { "emissionTextureId", 84 },
+                { "transparencyTextureId", 88 },
+                { "s_LuminanceTextureId", 92 },
+            } } });
+            scene.addMaterialShader("IridescenceStone_ddpNrEa", IridescenceStone_ddpNrEa_shader, IridescenceStone_ddpNrEa_shader_sizeInBytes, { { 76, {
+                { "FalloffAndLuminance", 0 },
+                { "IridescenceOffset", 16 },
+                { "WPBRFactor", 32 },
+                { "diffuseTextureId", 48 },
+                { "diffuse1TextureId", 52 },
+                { "specularTextureId", 56 },
+                { "normalTextureId", 60 },
+                { "reflectionTextureId", 64 },
+                { "emissionTextureId", 68 },
+                { "transparencyTextureId", 72 },
+            } } });
 
-        scene.addTexture("_____missingno_____", "./resources/missingno.dds");
+            scene.addTexture("_____missingno_____", "./resources/missingno.dds");
 
-        for (auto& f : std::filesystem::directory_iterator("./scene")) {
-            auto fpath = f.path();
+            for (auto& f : std::filesystem::directory_iterator("./scene")) {
+                auto fpath = f.path();
 
-            if (fpath.extension() == ".ntsp") {
-                scene.addTextureStreamingPackage(fpath.stem().generic_string(), fpath.generic_string());
-            }
-        }
-
-        for (auto& f : std::filesystem::directory_iterator("./scene")) {
-            auto fpath = f.path();
-
-            if (fpath.extension() == ".dds") {
-                scene.addTexture(fpath.stem().generic_string(), fpath.generic_string());
-            }
-        }
-
-        for (auto& f : std::filesystem::directory_iterator("./scene")) {
-            auto fpath = f.path();
-
-            if (fpath.extension() == ".material") {
-                scene.addMaterial(fpath.stem().generic_string(), fpath.generic_string());
-            }
-        }
-
-        for (auto& f : std::filesystem::directory_iterator("./scene")) {
-            auto fpath = f.path();
-
-            if (fpath.extension() == ".model") {
-                scene.addModel(fpath.stem().generic_string(), fpath.generic_string());
-            }
-        }
-
-        for (auto& f : std::filesystem::directory_iterator("./scene")) {
-            auto fpath = f.path();
-
-            if (fpath.extension() == ".terrain-model") {
-                scene.addTerrainModel(fpath.stem().generic_string(), fpath.generic_string());
-            }
-        }
-
-        for (auto& f : std::filesystem::directory_iterator("./scene")) {
-            auto fpath = f.path();
-
-            if (fpath.extension() == ".pcmodel") {
-                scene.addModelInstances(fpath.generic_string());
-            }
-        }
-
-        for (auto& f : std::filesystem::directory_iterator("./scene")) {
-            auto fpath = f.path();
-
-            if (fpath.extension() == ".scene") {
-                std::ifstream ifs{ fpath };
-
-                while (!ifs.eof()) {
-                    std::string name{};
-                    float px, py, pz, rx, ry, rz;
-
-                    ifs >> name >> px >> py >> pz >> rx >> ry >> rz;
-
-                    scene.addModelInstance(name, Eigen::Affine3f{
-                        Eigen::Translation3f{ px, py, pz }
-                        * Eigen::AngleAxisf{ rx * static_cast<float>(EIGEN_PI) / 180.0f, Eigen::Vector3f::UnitX() }
-                        * Eigen::AngleAxisf{ rz * static_cast<float>(EIGEN_PI) / 180.0f, Eigen::Vector3f::UnitZ() }
-                        * Eigen::AngleAxisf{ ry * static_cast<float>(EIGEN_PI) / 180.0f, Eigen::Vector3f::UnitY() }
-                    });
+                if (fpath.extension() == ".ntsp") {
+                    scene.addTextureStreamingPackage(fpath.stem().generic_string(), fpath.generic_string());
                 }
             }
-        }
 
-        scene.finalize();
+            for (auto& f : std::filesystem::directory_iterator("./scene")) {
+                auto fpath = f.path();
 
-        auto commandPool = device.device.createCommandPool({ vk::CommandPoolCreateFlagBits::eResetCommandBuffer, physicalDevice.queueIndices.graphics });
+                if (fpath.extension() == ".dds") {
+                    scene.addTexture(fpath.stem().generic_string(), fpath.generic_string());
+                }
+            }
 
-        constexpr size_t inFlightFrameCount = 2;
-        size_t currentFrame{};
+            for (auto& f : std::filesystem::directory_iterator("./scene")) {
+                auto fpath = f.path();
 
-        std::vector<vk::raii::Fence> frameFences{};
-        std::vector<vk::raii::Semaphore> acquireSemaphores{};
-        std::vector<vk::raii::CommandBuffer> commandBuffers{};
+                if (fpath.extension() == ".material") {
+                    scene.addMaterial(fpath.stem().generic_string(), fpath.generic_string());
+                }
+            }
 
-        GBuffer gbuffer{ device, swapchain, vk::Format::eR32G32B32A32Sfloat };
-        GBuffer tonemappedGbuffer{ device, swapchain, !useHDR ? vk::Format::eB8G8R8A8Unorm : swapchain.description.surfaceFormat.format };
-        Sampler gbufferSampler{ device.createSampler({}) };
-        vk::ImageSubresourceRange colorRange{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
+            for (auto& f : std::filesystem::directory_iterator("./scene")) {
+                auto fpath = f.path();
 
-        device.runOneTimeCommandBuffer([&](vk::CommandBuffer& cmd) {
-            std::array<GBuffer*, 2> gbuffers{ &gbuffer, &tonemappedGbuffer };
+                if (fpath.extension() == ".model") {
+                    scene.addModel(fpath.stem().generic_string(), fpath.generic_string());
+                }
+            }
 
-            size_t i{};
-            for (auto* gbuf : gbuffers) {
-                std::array<vk::ImageMemoryBarrier2, 1> imageBarrierBeforeClear{ {
+            for (auto& f : std::filesystem::directory_iterator("./scene")) {
+                auto fpath = f.path();
+
+                if (fpath.extension() == ".terrain-model") {
+                    scene.addTerrainModel(fpath.stem().generic_string(), fpath.generic_string());
+                }
+            }
+
+            for (auto& f : std::filesystem::directory_iterator("./scene")) {
+                auto fpath = f.path();
+
+                if (fpath.extension() == ".pcmodel") {
+                    scene.addModelInstances(fpath.generic_string());
+                }
+            }
+
+            for (auto& f : std::filesystem::directory_iterator("./scene")) {
+                auto fpath = f.path();
+
+                if (fpath.extension() == ".scene") {
+                    std::ifstream ifs{ fpath };
+
+                    while (!ifs.eof()) {
+                        std::string name{};
+                        float px, py, pz, rx, ry, rz;
+
+                        ifs >> name >> px >> py >> pz >> rx >> ry >> rz;
+
+                        scene.addModelInstance(name, Eigen::Affine3f{
+                            Eigen::Translation3f{ px, py, pz }
+                            * Eigen::AngleAxisf{ rx * static_cast<float>(EIGEN_PI) / 180.0f, Eigen::Vector3f::UnitX() }
+                            * Eigen::AngleAxisf{ rz * static_cast<float>(EIGEN_PI) / 180.0f, Eigen::Vector3f::UnitZ() }
+                            * Eigen::AngleAxisf{ ry * static_cast<float>(EIGEN_PI) / 180.0f, Eigen::Vector3f::UnitY() }
+                            });
+                    }
+                }
+            }
+
+            scene.finalize();
+
+            auto commandPool = device.device.createCommandPool({ vk::CommandPoolCreateFlagBits::eResetCommandBuffer, physicalDevice.queueIndices.graphics });
+
+            constexpr size_t inFlightFrameCount = 2;
+            size_t currentFrame{};
+
+            std::vector<vk::raii::Fence> frameFences{};
+            std::vector<vk::raii::Semaphore> acquireSemaphores{};
+            std::vector<vk::raii::CommandBuffer> commandBuffers{};
+
+            GBuffer gbuffer{ device, swapchain, vk::Format::eR32G32B32A32Sfloat };
+            GBuffer tonemappedGbuffer{ device, swapchain, !useHDR ? vk::Format::eB8G8R8A8Unorm : swapchain.description.surfaceFormat.format };
+            Sampler gbufferSampler{ device.createSampler({}) };
+            vk::ImageSubresourceRange colorRange{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
+
+            device.runOneTimeCommandBuffer([&](vk::CommandBuffer& cmd) {
+                std::array<GBuffer*, 2> gbuffers{ &gbuffer, &tonemappedGbuffer };
+
+                size_t i{};
+                for (auto* gbuf : gbuffers) {
+                    std::array<vk::ImageMemoryBarrier2, 1> imageBarrierBeforeClear{ {
+                        {
+                            vk::PipelineStageFlagBits2::eNone,
+                            vk::AccessFlagBits2::eNone,
+                            vk::PipelineStageFlagBits2::eTransfer,
+                            vk::AccessFlagBits2::eTransferWrite,
+                            vk::ImageLayout::eUndefined,
+                            vk::ImageLayout::eTransferDstOptimal,
+                            vk::QueueFamilyIgnored,
+                            vk::QueueFamilyIgnored,
+                            gbuf->image.image,
+                            colorRange,
+                        },
+                    } };
+                    cmd.pipelineBarrier2({ {}, {}, {}, imageBarrierBeforeClear });
+                    cmd.clearColorImage(gbuf->image.image, vk::ImageLayout::eTransferDstOptimal, i++ == 0 ? vk::ClearColorValue{ 0.0f, 1.0f, 0.0f, 1.0f } : vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f }, colorRange);
+
+                    std::array<vk::ImageMemoryBarrier2, 1> imageBarrierAfterClear{ {
+                        {
+                            vk::PipelineStageFlagBits2::eTransfer,
+                            vk::AccessFlagBits2::eTransferWrite,
+                            vk::PipelineStageFlagBits2::eAllGraphics | vk::PipelineStageFlagBits2::eAllCommands,
+                            vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+                            vk::ImageLayout::eTransferDstOptimal,
+                            vk::ImageLayout::eGeneral,
+                            vk::QueueFamilyIgnored,
+                            vk::QueueFamilyIgnored,
+                            gbuf->image.image,
+                            colorRange,
+                        },
+                    } };
+                    cmd.pipelineBarrier2({ {}, {}, {}, imageBarrierAfterClear });
+                }
+                });
+
+            for (size_t i = 0; i < inFlightFrameCount; i++) {
+                frameFences.emplace_back(device.device.createFence({ vk::FenceCreateFlagBits::eSignaled }));
+                acquireSemaphores.emplace_back(device.device.createSemaphore({}));
+                commandBuffers.emplace_back(std::move(device.device.allocateCommandBuffers({ commandPool, vk::CommandBufferLevel::ePrimary, 1 })[0]));
+            }
+
+            std::array<vk::Format, 1> colorAttachmentFormats{ { swapchain.description.surfaceFormat.format } };
+
+            IMGUI_CHECKVERSION();
+            ImGui::CreateContext();
+            ImGuiIO& io = ImGui::GetIO();
+            ImGui_ImplGlfw_InitForVulkan(window, true);
+            ImGui_ImplVulkan_InitInfo init_info{};
+            init_info.Instance = vk::Instance{ instance.instance };
+            init_info.PhysicalDevice = vk::PhysicalDevice{ physicalDevice.physicalDevice };
+            init_info.Device = vk::Device{ device.device };
+            init_info.QueueFamily = device.physicalDevice.queueIndices.graphics;
+            init_info.Queue = vk::Queue{ device.queues.graphics };
+            init_info.DescriptorPoolSize = 32;
+            init_info.MinImageCount = 2;
+            init_info.ImageCount = 2;
+            init_info.UseDynamicRendering = true;
+            init_info.PipelineInfoMain.PipelineRenderingCreateInfo = vk::PipelineRenderingCreateInfo{ {}, colorAttachmentFormats };
+            //init_info.PipelineInfoMain.RenderPass = wd->RenderPass;
+            //init_info.PipelineInfoMain.Subpass = 0;
+            //init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+            //init_info.CheckVkResultFn = check_vk_result;
+            ImGui_ImplVulkan_Init(&init_info);
+
+            RaytracingEngine engine{ device, scene };
+            shaders::tonemapper::Tonemapper tonemapper{ device };
+
+            tonemapper.config.useHDR = useHDR ? 1 : 0;
+
+            float4x4 projMat{ projectionMatrix(60.0f, static_cast<float>(swapchain.description.extent.width) / static_cast<float>(swapchain.description.extent.height), 0.1f, 60000.0f) };
+            engine.globalPushConstant.projInverse = projMat.inverse();
+            engine.globalPushConstant.materials = (shaders::Material*)scene.materialBuffer.value().deviceAddress;
+            engine.globalPushConstant.models = (shaders::Model*)scene.modelBuffer.value().deviceAddress;
+
+            glfwMakeContextCurrent(window);
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            glfwSetCursorPosCallback(window, mouseCallback);
+            glfwSetKeyCallback(window, keyCallback);
+
+            std::chrono::high_resolution_clock clock{};
+            std::vector<std::chrono::time_point<std::chrono::high_resolution_clock>> frameStarts(inFlightFrameCount);
+
+            while (!glfwWindowShouldClose(window)) {
+                glfwPollEvents();
+
+                ImGui_ImplVulkan_NewFrame();
+                ImGui_ImplGlfw_NewFrame();
+                ImGui::NewFrame();
+
+                auto frameFence = vk::Fence{ frameFences[currentFrame] };
+                auto acquireSemaphore = vk::Semaphore{ acquireSemaphores[currentFrame] };
+                auto commandBuffer = vk::CommandBuffer{ commandBuffers[currentFrame] };
+
+                device.device.waitForFences({ frameFence }, vk::True, UINT64_MAX);
+                device.device.resetFences({ frameFence });
+
+                auto imageIndex = swapchain.swapchain.acquireNextImage(UINT64_MAX, acquireSemaphore).value;
+
+                std::chrono::time_point<std::chrono::high_resolution_clock> frameStart{ clock.now() };
+                auto frameTime = frameStart - frameStarts[currentFrame];
+                auto frameTimeF = static_cast<float>(frameTime.count()) / static_cast<float>(inFlightFrameCount);
+                frameStarts[currentFrame] = frameStart;
+
+                if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+                    camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * frameTimeF / (1.0e9f / 60.0f) * -Eigen::Vector3f::UnitZ();
+                if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+                    camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * frameTimeF / (1.0e9f / 60.0f) * Eigen::Vector3f::UnitZ();
+                if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+                    camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * frameTimeF / (1.0e9f / 60.0f) * Eigen::Vector3f::UnitX();
+                if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+                    camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * frameTimeF / (1.0e9f / 60.0f) * -Eigen::Vector3f::UnitX();
+
+                auto submitSemaphore = vk::Semaphore{ swapchain.imageReadySemaphores[imageIndex] };
+
+                commandBuffer.reset();
+                commandBuffer.begin({ vk::CommandBufferUsageFlags{} });
+
+                vk::Sampler sampler{ gbufferSampler.sampler };
+                vk::ImageView gbufferImageView{ gbuffer.imageView };
+                vk::ImageView tonemappedGbufferImageView{ tonemappedGbuffer.imageView };
+                engine.raytrace(commandBuffer, gbufferImageView, swapchain.description.extent, camRot.inverse() * Eigen::Translation3f{ camPos }.inverse());
+
+                tonemapper.run(commandBuffer, swapchain.description.extent, { sampler, gbufferImageView, vk::ImageLayout::eGeneral }, { sampler, tonemappedGbufferImageView, vk::ImageLayout::eGeneral });
+                std::array<vk::MemoryBarrier2, 1> memoryBarriers{ {
+                    vk::MemoryBarrier2{ vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderWrite, vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferRead },
+                } };
+                std::array<vk::ImageMemoryBarrier2, 1> imageBarrierBeforeSwapchainCopy{ {
                     {
-                        vk::PipelineStageFlagBits2::eNone,
+                        vk::PipelineStageFlagBits2::eTransfer,
                         vk::AccessFlagBits2::eNone,
                         vk::PipelineStageFlagBits2::eTransfer,
                         vk::AccessFlagBits2::eTransferWrite,
-                        vk::ImageLayout::eUndefined,
-                        vk::ImageLayout::eTransferDstOptimal,
-                        vk::QueueFamilyIgnored,
-                        vk::QueueFamilyIgnored,
-                        gbuf->image.image,
-                        colorRange,
-                    },
-                } };
-                cmd.pipelineBarrier2({ {}, {}, {}, imageBarrierBeforeClear });
-                cmd.clearColorImage(gbuf->image.image, vk::ImageLayout::eTransferDstOptimal, i++ == 0 ? vk::ClearColorValue{ 0.0f, 1.0f, 0.0f, 1.0f } : vk::ClearColorValue{ 0.0f, 0.0f, 0.0f, 1.0f }, colorRange);
-
-                std::array<vk::ImageMemoryBarrier2, 1> imageBarrierAfterClear{ {
-                    {
-                        vk::PipelineStageFlagBits2::eTransfer,
-                        vk::AccessFlagBits2::eTransferWrite,
-                        vk::PipelineStageFlagBits2::eAllGraphics | vk::PipelineStageFlagBits2::eAllCommands,
-                        vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
-                        vk::ImageLayout::eTransferDstOptimal,
+                        vk::ImageLayout::ePresentSrcKHR,
                         vk::ImageLayout::eGeneral,
                         vk::QueueFamilyIgnored,
                         vk::QueueFamilyIgnored,
-                        gbuf->image.image,
+                        swapchain.images[imageIndex],
                         colorRange,
                     },
                 } };
-                cmd.pipelineBarrier2({ {}, {}, {}, imageBarrierAfterClear });
+                commandBuffer.pipelineBarrier2({ {}, memoryBarriers, {}, imageBarrierBeforeSwapchainCopy });
+                vk::ImageCopy2 copyRegion{
+                    { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+                    { 0, 0, 0 },
+                    { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+                    { 0, 0, 0 },
+                    { swapchain.description.extent.width, swapchain.description.extent.height, 1 },
+                };
+                commandBuffer.copyImage2({ tonemappedGbuffer.image.image, vk::ImageLayout::eGeneral, swapchain.images[imageIndex], vk::ImageLayout::eGeneral, { copyRegion } });
+                vk::Rect2D renderArea{ { 0, 0 }, swapchain.description.extent };
+                std::array<vk::RenderingAttachmentInfo, 1> colorAttachments{ {
+                    { swapchain.imageViews[imageIndex], vk::ImageLayout::eGeneral}
+                } };
+                commandBuffer.beginRendering({ {}, renderArea, 1, 0, colorAttachments });
+
+                ImGui::Text("Frame Time: %f", frameTimeF / 1.0e6f);
+                ImGui::Text("FPS: %f", 1.0e9f / frameTimeF);
+                ImGui::Render();
+                ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+                commandBuffer.endRendering();
+                std::array<vk::ImageMemoryBarrier2, 1> imageBarrierAfterSwapchainCopy{ {
+                    {
+                        vk::PipelineStageFlagBits2::eTransfer,
+                        vk::AccessFlagBits2::eTransferWrite,
+                        vk::PipelineStageFlagBits2::eTransfer,
+                        vk::AccessFlagBits2::eNone,
+                        vk::ImageLayout::eGeneral,
+                        vk::ImageLayout::ePresentSrcKHR,
+                        vk::QueueFamilyIgnored,
+                        vk::QueueFamilyIgnored,
+                        swapchain.images[imageIndex],
+                        colorRange,
+                    },
+                } };
+                commandBuffer.pipelineBarrier2({ {}, {}, {}, imageBarrierAfterSwapchainCopy });
+
+                commandBuffer.end();
+
+                vk::SemaphoreSubmitInfo acquireSemaphoreSubmitInfo{ acquireSemaphore, 0, vk::PipelineStageFlagBits2::eColorAttachmentOutput };
+                vk::CommandBufferSubmitInfo commandBufferSubmitInfo{ commandBuffer };
+                vk::SemaphoreSubmitInfo signalSemaphoreSubmitInfo{ submitSemaphore, 0, vk::PipelineStageFlagBits2::eBottomOfPipe };
+
+                device.queues.graphics.submit2({ { {}, { acquireSemaphoreSubmitInfo }, { commandBufferSubmitInfo }, { signalSemaphoreSubmitInfo } } }, frameFence);
+
+                auto swp = vk::SwapchainKHR{ swapchain.swapchain };
+                device.queues.present.presentKHR({ { submitSemaphore }, { swp }, { imageIndex } });
+
+                currentFrame = (currentFrame + 1) % inFlightFrameCount;
             }
-        });
 
-        for (size_t i = 0; i < inFlightFrameCount; i++) {
-            frameFences.emplace_back(device.device.createFence({ vk::FenceCreateFlagBits::eSignaled }));
-            acquireSemaphores.emplace_back(device.device.createSemaphore({}));
-            commandBuffers.emplace_back(std::move(device.device.allocateCommandBuffers({ commandPool, vk::CommandBufferLevel::ePrimary, 1 })[0]));
+            device.device.waitIdle();
+
+            ImGui_ImplVulkan_Shutdown();
+            ImGui_ImplGlfw_Shutdown();
+            ImGui::DestroyContext();
         }
-
-        std::array<vk::Format, 1> colorAttachmentFormats{ { swapchain.description.surfaceFormat.format } };
-
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO();
-        ImGui_ImplGlfw_InitForVulkan(window, true);
-        ImGui_ImplVulkan_InitInfo init_info{};
-        init_info.Instance = vk::Instance{ instance.instance };
-        init_info.PhysicalDevice = vk::PhysicalDevice{ physicalDevice.physicalDevice };
-        init_info.Device = vk::Device{ device.device };
-        init_info.QueueFamily = device.physicalDevice.queueIndices.graphics;
-        init_info.Queue = vk::Queue{ device.queues.graphics };
-        init_info.DescriptorPoolSize = 32;
-        init_info.MinImageCount = 2;
-        init_info.ImageCount = 2;
-        init_info.UseDynamicRendering = true;
-        init_info.PipelineInfoMain.PipelineRenderingCreateInfo = vk::PipelineRenderingCreateInfo{ {}, colorAttachmentFormats };
-        //init_info.PipelineInfoMain.RenderPass = wd->RenderPass;
-        //init_info.PipelineInfoMain.Subpass = 0;
-        //init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-        //init_info.CheckVkResultFn = check_vk_result;
-        ImGui_ImplVulkan_Init(&init_info);
-
-        RaytracingEngine engine{ device, scene };
-        shaders::tonemapper::Tonemapper tonemapper{ device };
-
-        tonemapper.config.useHDR = useHDR ? 1 : 0;
-
-        float4x4 projMat{ projectionMatrix(60.0f, static_cast<float>(swapchain.description.extent.width) / static_cast<float>(swapchain.description.extent.height), 0.1f, 60000.0f) };
-        engine.globalPushConstant.projInverse = projMat.inverse();
-        engine.globalPushConstant.materials = (shaders::Material*)scene.materialBuffer.value().deviceAddress;
-        engine.globalPushConstant.models = (shaders::Model*)scene.modelBuffer.value().deviceAddress;
-
-        glfwMakeContextCurrent(window);
-        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-        glfwSetCursorPosCallback(window, mouseCallback);
-        glfwSetKeyCallback(window, keyCallback);
-
-        std::chrono::high_resolution_clock clock{};
-        std::vector<std::chrono::time_point<std::chrono::high_resolution_clock>> frameStarts(inFlightFrameCount);
-
-        while (!glfwWindowShouldClose(window)) {
-            glfwPollEvents();
-
-            ImGui_ImplVulkan_NewFrame();
-            ImGui_ImplGlfw_NewFrame();
-            ImGui::NewFrame();
-
-            auto frameFence = vk::Fence{ frameFences[currentFrame] };
-            auto acquireSemaphore = vk::Semaphore{ acquireSemaphores[currentFrame] };
-            auto commandBuffer = vk::CommandBuffer{ commandBuffers[currentFrame] };
-
-            device.device.waitForFences({ frameFence }, vk::True, UINT64_MAX);
-            device.device.resetFences({ frameFence });
-
-            auto imageIndex = swapchain.swapchain.acquireNextImage(UINT64_MAX, acquireSemaphore).value;
-
-            std::chrono::time_point<std::chrono::high_resolution_clock> frameStart{ clock.now() };
-            auto frameTime = frameStart - frameStarts[currentFrame];
-            auto frameTimeF = static_cast<float>(frameTime.count()) / static_cast<float>(inFlightFrameCount);
-            frameStarts[currentFrame] = frameStart;
-
-            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-                camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * frameTimeF / (1.0e9f / 60.0f) * -Eigen::Vector3f::UnitZ();
-            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-                camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * frameTimeF / (1.0e9f / 60.0f) * Eigen::Vector3f::UnitZ();
-            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-                camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * frameTimeF / (1.0e9f / 60.0f) * Eigen::Vector3f::UnitX();
-            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-                camPos += camRot.toRotationMatrix() * (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? moveSens : moveSensSlow) * frameTimeF / (1.0e9f / 60.0f) * -Eigen::Vector3f::UnitX();
-
-            auto submitSemaphore = vk::Semaphore{ swapchain.imageReadySemaphores[imageIndex] };
-
-            commandBuffer.reset();
-            commandBuffer.begin({ vk::CommandBufferUsageFlags{} });
-
-            vk::Sampler sampler{ gbufferSampler.sampler };
-            vk::ImageView gbufferImageView{ gbuffer.imageView };
-            vk::ImageView tonemappedGbufferImageView{ tonemappedGbuffer.imageView };
-            engine.raytrace(commandBuffer, gbufferImageView, swapchain.description.extent, camRot.inverse() * Eigen::Translation3f{ camPos }.inverse());
-
-            tonemapper.run(commandBuffer, swapchain.description.extent, { sampler, gbufferImageView, vk::ImageLayout::eGeneral }, { sampler, tonemappedGbufferImageView, vk::ImageLayout::eGeneral });
-            std::array<vk::MemoryBarrier2, 1> memoryBarriers{ {
-                vk::MemoryBarrier2{ vk::PipelineStageFlagBits2::eComputeShader, vk::AccessFlagBits2::eShaderWrite, vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferRead },
-            } };
-            std::array<vk::ImageMemoryBarrier2, 1> imageBarrierBeforeSwapchainCopy{ {
-                {
-                    vk::PipelineStageFlagBits2::eTransfer,
-                    vk::AccessFlagBits2::eNone,
-                    vk::PipelineStageFlagBits2::eTransfer,
-                    vk::AccessFlagBits2::eTransferWrite,
-                    vk::ImageLayout::ePresentSrcKHR,
-                    vk::ImageLayout::eGeneral,
-                    vk::QueueFamilyIgnored,
-                    vk::QueueFamilyIgnored,
-                    swapchain.images[imageIndex],
-                    colorRange,
-                },
-            } };
-            commandBuffer.pipelineBarrier2({ {}, memoryBarriers, {}, imageBarrierBeforeSwapchainCopy });
-            vk::ImageCopy2 copyRegion{
-                { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
-                { 0, 0, 0 },
-                { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
-                { 0, 0, 0 },
-                { swapchain.description.extent.width, swapchain.description.extent.height, 1 },
-            };
-            commandBuffer.copyImage2({ tonemappedGbuffer.image.image, vk::ImageLayout::eGeneral, swapchain.images[imageIndex], vk::ImageLayout::eGeneral, { copyRegion } });
-            vk::Rect2D renderArea{ { 0, 0 }, swapchain.description.extent };
-            std::array<vk::RenderingAttachmentInfo, 1> colorAttachments{ {
-                { swapchain.imageViews[imageIndex], vk::ImageLayout::eGeneral}
-            } };
-            commandBuffer.beginRendering({ {}, renderArea, 1, 0, colorAttachments });
-
-            ImGui::Text("Frame Time: %f", frameTimeF / 1.0e6f);
-            ImGui::Text("FPS: %f", 1.0e9f / frameTimeF);
-            ImGui::Render();
-            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
-            commandBuffer.endRendering();
-            std::array<vk::ImageMemoryBarrier2, 1> imageBarrierAfterSwapchainCopy{ {
-                {
-                    vk::PipelineStageFlagBits2::eTransfer,
-                    vk::AccessFlagBits2::eTransferWrite,
-                    vk::PipelineStageFlagBits2::eTransfer,
-                    vk::AccessFlagBits2::eNone,
-                    vk::ImageLayout::eGeneral,
-                    vk::ImageLayout::ePresentSrcKHR,
-                    vk::QueueFamilyIgnored,
-                    vk::QueueFamilyIgnored,
-                    swapchain.images[imageIndex],
-                    colorRange,
-                },
-            } };
-            commandBuffer.pipelineBarrier2({ {}, {}, {}, imageBarrierAfterSwapchainCopy });
-
-            commandBuffer.end();
-
-            vk::SemaphoreSubmitInfo acquireSemaphoreSubmitInfo{ acquireSemaphore, 0, vk::PipelineStageFlagBits2::eColorAttachmentOutput };
-            vk::CommandBufferSubmitInfo commandBufferSubmitInfo{ commandBuffer };
-            vk::SemaphoreSubmitInfo signalSemaphoreSubmitInfo{ submitSemaphore, 0, vk::PipelineStageFlagBits2::eBottomOfPipe };
-
-            device.queues.graphics.submit2({ { {}, { acquireSemaphoreSubmitInfo }, { commandBufferSubmitInfo }, { signalSemaphoreSubmitInfo } } }, frameFence);
-
-            auto swp = vk::SwapchainKHR{ swapchain.swapchain };
-            device.queues.present.presentKHR({ { submitSemaphore }, { swp }, { imageIndex } });
-
-            currentFrame = (currentFrame + 1) % inFlightFrameCount;
-        }
-
-        device.device.waitIdle();
-
-        ImGui_ImplVulkan_Shutdown();
-        ImGui_ImplGlfw_Shutdown();
-        ImGui::DestroyContext();
+    }
+    catch (const std::runtime_error& err) {
+        std::cerr << "CRITICAL ERROR: " << err.what() << std::endl;
     }
 
     glfwDestroyWindow(window);
