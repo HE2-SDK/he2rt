@@ -10,16 +10,19 @@ namespace he2rt {
         , imageViews{ createImageViews() }
         , imageReadySemaphores{ createImageReadySemaphores() }
     {
-        device.device.setHdrMetadataEXT({ this->swapchain }, { {
-            { 0.708f, 0.292f },
-            { 0.170f, 0.797f },
-            { 0.131f, 0.046f },
-            { 0.3127f, 0.3290f },
-            1000.0f,
-            0.05f,
-            1000.0f,
-            400.0f,
-        } });
+        if (device.physicalDevice.HDR) {
+            device.device.setHdrMetadataEXT({ this->swapchain }, { {
+                { 0.708f, 0.292f },
+                { 0.170f, 0.797f },
+                { 0.131f, 0.046f },
+                { 0.3127f, 0.3290f },
+                1000.0f,
+                0.05f,
+                1000.0f,
+                400.0f,
+            } });
+        }
+
         device.runOneTimeCommandBuffer([&](vk::CommandBuffer& cmd) {
             std::vector<vk::ImageMemoryBarrier2> imageBarriers{};
 

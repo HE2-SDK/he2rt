@@ -306,7 +306,7 @@ namespace he2rt {
 				std::vector<vk::AccelerationStructureGeometryKHR> geometries{};
 				std::vector<vk::AccelerationStructureBuildRangeInfoKHR> rangeInfos{};
 
-				std::cout << "Mesh group count: " << contexts.get_field<"meshGroupCount">().as_primitive().as<unsigned int>() << std::endl;
+				//std::cout << "Mesh group count: " << contexts.get_field<"meshGroupCount">().as_primitive().as<unsigned int>() << std::endl;
 
 				auto meshGroups = contexts.get_field<"meshGroups">().as_pointer().get().value().as_carray();
 

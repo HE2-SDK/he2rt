@@ -3,7 +3,7 @@
 #include "device.h"
 
 namespace he2rt {
-    PhysicalDevice::PhysicalDevice(Instance& instance, vk::raii::PhysicalDevice&& physicalDevice, const Indices& queueIndices) : instance{ instance }, physicalDevice { std::move(physicalDevice) }, queueIndices{ queueIndices } {
+    PhysicalDevice::PhysicalDevice(Instance& instance, vk::raii::PhysicalDevice&& physicalDevice, const Indices& queueIndices, bool HDR) : instance{ instance }, physicalDevice{ std::move(physicalDevice) }, queueIndices{ queueIndices }, HDR{ HDR } {
         auto properties2 = this->physicalDevice.getProperties2<
             vk::PhysicalDeviceProperties2,
             vk::PhysicalDeviceAccelerationStructurePropertiesKHR,
@@ -29,11 +29,16 @@ namespace he2rt {
             vk::KHRAccelerationStructureExtensionName,
             vk::KHRRayTracingPipelineExtensionName,
             vk::KHRDeferredHostOperationsExtensionName,
-            vk::EXTHdrMetadataExtensionName,
             vk::NVRayTracingInvocationReorderExtensionName,
+#ifdef _DEBUG
             vk::NVDeviceDiagnosticCheckpointsExtensionName,
             vk::NVDeviceDiagnosticsConfigExtensionName,
+#endif
         };
+
+        if (HDR) {
+            extensions.emplace_back(vk::EXTHdrMetadataExtensionName);
+        }
 
         auto features2 = physicalDevice.getFeatures2<
             vk::PhysicalDeviceFeatures2,
@@ -61,9 +66,11 @@ namespace he2rt {
             features2.get<vk::PhysicalDeviceAccelerationStructureFeaturesKHR>(),
             features2.get<vk::PhysicalDeviceRayTracingPipelineFeaturesKHR>(),
             features2.get<vk::PhysicalDeviceRayTracingInvocationReorderFeaturesNV>(),
+#ifdef _DEBUG
             vk::DeviceDiagnosticsConfigCreateInfoNV{
                 vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableAutomaticCheckpoints | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableResourceTracking | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableShaderDebugInfo | vk::DeviceDiagnosticsConfigFlagBitsNV::eEnableShaderErrorReporting
             },
+#endif
         };
 
         return { *this, { physicalDevice, createInfoChain.get<vk::DeviceCreateInfo>() }};
@@ -78,10 +85,11 @@ namespace he2rt {
 
         std::optional<vk::SurfaceFormatKHR> selectedFormat{};
         for (auto& format : surfaceFormats) {
-            //if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
-            //    selectedFormat = format;
-            //}
-            if (format.format == vk::Format::eA2B10G10R10UnormPack32 && format.colorSpace == vk::ColorSpaceKHR::eHdr10St2084EXT) {
+            bool isFormatMatch = HDR
+                ? format.format == vk::Format::eA2B10G10R10UnormPack32 && format.colorSpace == vk::ColorSpaceKHR::eHdr10St2084EXT
+                : format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
+
+            if (isFormatMatch) {
                 selectedFormat = format;
             }
         }

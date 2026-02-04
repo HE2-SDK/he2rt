@@ -22,8 +22,9 @@ namespace he2rt {
         Indices queueIndices{};
         vk::PhysicalDeviceAccelerationStructurePropertiesKHR accelerationStructureProperties{};
         vk::PhysicalDeviceRayTracingPipelinePropertiesKHR rayTracingPipelineProperties{};
+        bool HDR{};
 
-		PhysicalDevice(Instance& instance, vk::raii::PhysicalDevice&& physicalDevice, const Indices& queueIndices);
+		PhysicalDevice(Instance& instance, vk::raii::PhysicalDevice&& physicalDevice, const Indices& queueIndices, bool HDR);
 
         Device createDevice();
         std::optional<SwapchainDescription> findSwapchain(const vk::Extent2D& desiredExtent, vk::SurfaceKHR surface);

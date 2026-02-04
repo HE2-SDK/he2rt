@@ -25,6 +25,6 @@ namespace he2rt {
 
 		Instance(vk::raii::Context& context);
 
-		std::optional<PhysicalDevice> findPhysicalDevice(const vk::Extent2D& desiredExtent, vk::SurfaceKHR surface);
+		std::optional<PhysicalDevice> findPhysicalDevice(const vk::Extent2D& desiredExtent, vk::SurfaceKHR surface, bool HDR = false);
 	};
 }

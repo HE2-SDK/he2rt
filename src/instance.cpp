@@ -15,7 +15,8 @@ namespace he2rt {
         std::vector<const char*> layers{ "VK_LAYER_KHRONOS_validation" };
         std::vector<const char*> extensions{ glfwExtensions, glfwExtensions + glfwExtensionCount };
 
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        extensions.push_back(vk::EXTDebugUtilsExtensionName);
+        extensions.push_back(vk::EXTSwapchainColorSpaceExtensionName);
 
         vk::ApplicationInfo appInfo{
             "he2rt",
@@ -48,7 +49,7 @@ namespace he2rt {
         };
     }
 
-    std::optional<PhysicalDevice> Instance::findPhysicalDevice(const vk::Extent2D& desiredExtent, vk::SurfaceKHR surface) {
+    std::optional<PhysicalDevice> Instance::findPhysicalDevice(const vk::Extent2D& desiredExtent, vk::SurfaceKHR surface, bool HDR) {
         for (auto& physicalDevice : instance.enumeratePhysicalDevices()) {
             auto properties = physicalDevice.getProperties();
             auto features = physicalDevice.getFeatures();
@@ -64,11 +65,16 @@ namespace he2rt {
                 vk::KHRSpirv14ExtensionName,
                 vk::KHRAccelerationStructureExtensionName,
                 vk::KHRBufferDeviceAddressExtensionName,
-                vk::EXTHdrMetadataExtensionName,
                 vk::NVRayTracingInvocationReorderExtensionName,
+#ifdef _DEBUG
                 vk::NVDeviceDiagnosticCheckpointsExtensionName,
                 vk::NVDeviceDiagnosticsConfigExtensionName,
+#endif
             };
+
+            if (HDR) {
+                requiredExtensions.emplace_back(vk::EXTHdrMetadataExtensionName);
+            }
 
             if (std::any_of(requiredExtensions.begin(), requiredExtensions.end(), [&](auto* extensionName) {
                 return !std::any_of(extensions.begin(), extensions.end(), [extensionName](auto& extension) { return !strcmp(extension.extensionName, extensionName); });
@@ -96,7 +102,7 @@ namespace he2rt {
             }
 
             if (graphicsQueueFamilyIdx.has_value() && presentQueueFamilyIdx.has_value()) {
-                PhysicalDevice pDev{ *this, std::move(physicalDevice), { graphicsQueueFamilyIdx.value(), presentQueueFamilyIdx.value() } };
+                PhysicalDevice pDev{ *this, std::move(physicalDevice), { graphicsQueueFamilyIdx.value(), presentQueueFamilyIdx.value() }, HDR };
 
                 if (pDev.findSwapchain(desiredExtent, surface).has_value()) {
                     return pDev;

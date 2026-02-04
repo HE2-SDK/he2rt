@@ -101,8 +101,6 @@ namespace he2rt {
                     found = true;
                 }
             });
-
-            std::cout << "Loaded through NEDARC" << std::endl;
         }
         else {
             addModel(name, ims);
@@ -134,8 +132,6 @@ namespace he2rt {
                     found = true;
                 }
             });
-
-            std::cout << "Loaded through NEDARC" << std::endl;
         }
         else {
             addTerrainModel(name, ims);
@@ -933,14 +929,14 @@ namespace he2rt {
 
         addTexture(name, ddsImage, imgData.get(), mipmapInfo.size);
 
-        std::ofstream ofs{ name + "_debug_dump.dds", std::ios::binary};
-        ofs.write((char*)ddsHeaderData.get(), ddsHeaderSize);
-        
-        for (auto& mip : textureInfo.mipmapInfos) {
-            auto mipImgData = std::make_unique<uint8_t[]>(mip.size);
-            ifs.seekg(mip.offset);
-            ifs.read((char*)mipImgData.get(), mip.size);
-            ofs.write((char*)mipImgData.get(), mip.size);
-        }
+        //std::ofstream ofs{ name + "_debug_dump.dds", std::ios::binary};
+        //ofs.write((char*)ddsHeaderData.get(), ddsHeaderSize);
+        //
+        //for (auto& mip : textureInfo.mipmapInfos) {
+        //    auto mipImgData = std::make_unique<uint8_t[]>(mip.size);
+        //    ifs.seekg(mip.offset);
+        //    ifs.read((char*)mipImgData.get(), mip.size);
+        //    ofs.write((char*)mipImgData.get(), mip.size);
+        //}
     }
 }

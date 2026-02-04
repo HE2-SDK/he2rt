@@ -8,7 +8,6 @@
 #include "scene.h"
 #include "raytracing-engine.h"
 #include "post-processing/tonemapper/tonemapper.h"
-#include "gpu-crash-tracker.h"
 #include "Common_d.slang.spv.h"
 #include "Common_dn.slang.spv.h"
 #include "Common_dp.slang.spv.h"
@@ -24,7 +23,13 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 
+#ifdef _DEBUG
+#include "gpu-crash-tracker.h"
+#endif
+
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+
+static const bool useHDR = false;
 
 using namespace he2rt;
 
@@ -135,12 +140,14 @@ int main(void) {
         vk::Extent2D desiredExtent{ (uint32_t)width, (uint32_t)height };
 
         auto surface = createSurface(instance, window);
-        auto maybePhysicalDevice = instance.findPhysicalDevice(desiredExtent, surface);
+        auto maybePhysicalDevice = instance.findPhysicalDevice(desiredExtent, surface, useHDR);
 
         if (!maybePhysicalDevice.has_value())
             throw std::runtime_error{ "can't find suitable device" };
 
+#ifdef _DEBUG
         GpuCrashTracker gpuCrashTracker{};
+#endif
 
         auto physicalDevice = std::move(*maybePhysicalDevice);
         auto device = physicalDevice.createDevice();
@@ -149,8 +156,6 @@ int main(void) {
 
         auto swapchain = device.createSwapchain(desiredExtent, surface);
         Scene scene{ device };
-
-        std::cout << "swap chain contains " << swapchain.images.size() << " images." << std::endl;
 
         scene.addMaterialShader("Common_d", Common_d_shader, Common_d_shader_sizeInBytes, { { 20, {
             { "PBRFactor", 0 },
@@ -228,6 +233,8 @@ int main(void) {
             { "transparencyTextureId", 72 },
         } } });
 
+        scene.addTexture("_____missingno_____", "./resources/missingno.dds");
+
         for (auto& f : std::filesystem::directory_iterator("./scene")) {
             auto fpath = f.path();
 
@@ -276,9 +283,27 @@ int main(void) {
             }
         }
 
-        //scene.addModelInstance("boss_dragon01", Eigen::Affine3f{ Eigen::Translation3f{ 0.0f, 0.0f, 0.0f } });
-        //scene.addModelInstance("chr_sonic", Eigen::Affine3f{ Eigen::Translation3f{ 0.0f, 0.0f, 0.0f } });
-        //scene.addModelInstance("cmnisl_obj_airwall02_A", Eigen::Affine3f{ Eigen::Translation3f{ 1.5f, 1.0f, -1.0f } * Eigen::AngleAxisf{ -EIGEN_PI / 7, Eigen::Vector3f::UnitY() } });
+        for (auto& f : std::filesystem::directory_iterator("./scene")) {
+            auto fpath = f.path();
+
+            if (fpath.extension() == ".scene") {
+                std::ifstream ifs{ fpath };
+
+                while (!ifs.eof()) {
+                    std::string name{};
+                    float px, py, pz, rx, ry, rz;
+
+                    ifs >> name >> px >> py >> pz >> rx >> ry >> rz;
+
+                    scene.addModelInstance(name, Eigen::Affine3f{
+                        Eigen::Translation3f{ px, py, pz }
+                        * Eigen::AngleAxisf{ rx * static_cast<float>(EIGEN_PI) / 180.0f, Eigen::Vector3f::UnitX() }
+                        * Eigen::AngleAxisf{ rz * static_cast<float>(EIGEN_PI) / 180.0f, Eigen::Vector3f::UnitZ() }
+                        * Eigen::AngleAxisf{ ry * static_cast<float>(EIGEN_PI) / 180.0f, Eigen::Vector3f::UnitY() }
+                    });
+                }
+            }
+        }
 
         scene.finalize();
 
@@ -292,7 +317,7 @@ int main(void) {
         std::vector<vk::raii::CommandBuffer> commandBuffers{};
 
         GBuffer gbuffer{ device, swapchain, vk::Format::eR32G32B32A32Sfloat };
-        GBuffer tonemappedGbuffer{ device, swapchain, vk::Format::eA2B10G10R10UnormPack32 };
+        GBuffer tonemappedGbuffer{ device, swapchain, !useHDR ? vk::Format::eB8G8R8A8Unorm : swapchain.description.surfaceFormat.format };
         Sampler gbufferSampler{ device.createSampler({}) };
         vk::ImageSubresourceRange colorRange{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
 
@@ -367,6 +392,8 @@ int main(void) {
 
         RaytracingEngine engine{ device, scene };
         shaders::tonemapper::Tonemapper tonemapper{ device };
+
+        tonemapper.config.useHDR = useHDR ? 1 : 0;
 
         float4x4 projMat{ projectionMatrix(60.0f, static_cast<float>(swapchain.description.extent.width) / static_cast<float>(swapchain.description.extent.height), 0.1f, 60000.0f) };
         engine.globalPushConstant.projInverse = projMat.inverse();

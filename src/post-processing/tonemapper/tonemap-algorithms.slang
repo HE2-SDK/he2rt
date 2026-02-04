@@ -490,4 +490,10 @@ namespace he2rt::shaders::tonemapper {
         return c;
     }
 
+    inline float3 applyTonemapHDR(Config tm, float3 color) {
+        color = mul(getColorCorrectionMatrix(tm.exposure, tm.temperature, tm.tint), color);
+        color = tonemapACESHDR(color.xyz, 1000.0f);
+
+        return color;
+    }
 }

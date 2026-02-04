@@ -20,6 +20,7 @@ namespace he2rt::shaders::tonemapper {
 
 	struct Config {
 		int isActive = 1;
+		int useHDR = 0;
 		int method = Method::eFilmic;
 
 		// Input color correction
