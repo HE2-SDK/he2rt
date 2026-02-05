@@ -4,6 +4,8 @@
 
 #define MISS_DEPTH 1000
 
+static int MAX_DEPTH = 4;
+
 using namespace he2rt::shaders;
 
 struct PathTracingState {
@@ -11,10 +13,13 @@ struct PathTracingState {
     float3 throughput = float3(1.0f, 1.0f, 1.0f);
 };
 
-struct HitPayload {
-	float3 color;
-	float weight;
-	int depth;
+struct HitResult {
+    float4x3 objectToWorld;
+    float2 barycentrics;
+    uint modelId;
+    uint meshId;
+    uint triangleId;
+    bool isHit;
 };
 
 struct TriangleAttributes<T> {
@@ -77,7 +82,7 @@ SurfaceParameters collectSurfaceParameters(Mesh mesh, uint triangleId, float4x3 
         Basis(
             normalize(mul(float4(nrm, 0.0), objToWorld).xyz),
             normalize(mul(float4(tng, 0.0), objToWorld).xyz),
-              normalize(mul(float4(bin, 0.0), objToWorld).xyz)
+            normalize(mul(float4(bin, 0.0), objToWorld).xyz)
         ),
         { uv, uv2, uv, uv },
         color,
@@ -99,37 +104,62 @@ float3 offsetRay(in float3 p, in float3 n)
     return offsetPoint;
 }
 
+HitResult traceRay(RayDesc ray, int depth) {
+    HitResult result;
+
+    if (USE_SER) {
+        HitObject hit = HitObject::TraceRay(tlas, RAY_FLAG_NONE, 0xff, 0, 0, 0, ray, result);
+
+        result.isHit = hit.IsHit();
+
+        uint materialId = 0;
+
+        if (result.isHit) {
+            result.objectToWorld = hit.GetObjectToWorld();
+            result.barycentrics = hit.GetAttributes<BuiltInTriangleIntersectionAttributes>().barycentrics;
+            result.modelId = hit.GetInstanceID();
+            result.meshId = hit.GetGeometryIndex();
+            result.triangleId = hit.GetPrimitiveIndex();
+
+            materialId = pushConst.models[result.modelId].meshes[result.meshId].materialId;
+        }
+        //else {
+        //    result.modelId = 0;
+        //    result.meshId = 0;
+        //}
+
+        //uint materialId =
+        //uint hint = (result.modelId << 8) | (result.meshId << 1) | ((depth + 1 == MAX_DEPTH) ? 1 : 0);
+        uint hint = (materialId << 1) | ((depth + 1 == MAX_DEPTH) ? 1 : 0);
+
+        ReorderThread(hit, hint, 16);
+    }
+    else {
+        TraceRay(tlas, RAY_FLAG_NONE, 0xff, 0, 0, 0, ray, result);
+    }
+
+    return result;
+}
+
 float3 pathTrace(RayDesc ray, inout uint seed) {
     PathTracingState state = {};
 
-    for (int depth = 0; depth < 4; depth++) {
-        HitPayload payload;
-        payload.color = float3(0, 0, 0);
-        payload.weight = 1;
-        payload.depth = 0;
+    for (int depth = 0; depth < MAX_DEPTH; depth++) {
+        HitResult hit = traceRay(ray, depth);
 
-        HitObject hit = HitObject::TraceRay(tlas, RAY_FLAG_NONE, 0xff, 0, 0, 0, ray, payload);
-
-        if (!hit.IsHit()) {
-//            if (depth == 0)
-//                state.radiance = float3(0.0f, 1.0f, 0.0f);
+        if (!hit.isHit) {
             break;
         }
 
-        BuiltInTriangleIntersectionAttributes attr = hit.GetAttributes<BuiltInTriangleIntersectionAttributes>();
-        uint modelId = hit.GetInstanceID();
-        uint geometryId = hit.GetGeometryIndex();
-        uint triangleId = hit.GetPrimitiveIndex();
-        float4x3 objToWorld = hit.GetObjectToWorld();
+        Model model = pushConst.models[hit.modelId];
+        Mesh mesh = model.meshes[hit.meshId];
+
         float3 viewDirection = -ray.Direction;
 
-        Model model = pushConst.models[modelId];
-        Mesh mesh = model.meshes[geometryId];
-
         // Collect some basic information
-        float3 barycentrics = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
-        float3 position = getPosition(mesh, triangleId, objToWorld, barycentrics);
-        SurfaceParameters surface = collectSurfaceParameters(mesh, triangleId, objToWorld, barycentrics);
+        float3 barycentrics = float3(1 - hit.barycentrics.x - hit.barycentrics.y, hit.barycentrics.x, hit.barycentrics.y);
+        float3 position = getPosition(mesh, hit.triangleId, hit.objectToWorld, barycentrics);
+        SurfaceParameters surface = collectSurfaceParameters(mesh, hit.triangleId, hit.objectToWorld, barycentrics);
 
         // Look up the material
         uint materialId = mesh.materialId;
@@ -165,8 +195,8 @@ float3 pathTrace(RayDesc ray, inout uint seed) {
 }
 
 float3 pathTracePixel(inout uint seed) {
-    float2 launchID = (float2)DispatchRaysIndex().xy;
-    float2 launchSize = (float2)DispatchRaysDimensions().xy;
+    const float2 launchID = (float2)DispatchRaysIndex().xy;
+    const float2 launchSize = (float2)DispatchRaysDimensions().xy;
 
     const float2 subpixelJitter = pushConst.frame == 0 ? float2(0.5f, 0.5f) : float2(rand(seed), rand(seed));
     const float2 pixelCenter = launchID + subpixelJitter;
@@ -192,8 +222,8 @@ float3 pathTracePixel(inout uint seed) {
 
 [shader("raygeneration")]
 void rgenMain() {
-	float2 launchID = (float2)DispatchRaysIndex().xy;
-    float2 launchSize = (float2)DispatchRaysDimensions().xy;
+	const float2 launchID = (float2)DispatchRaysIndex().xy;
+    const float2 launchSize = (float2)DispatchRaysDimensions().xy;
 
     uint seed = xxhash32(uint3(uint2(launchID.xy), pushConst.totalFrame));
 
@@ -216,59 +246,16 @@ void rgenMain() {
 }
 
 [shader("closesthit")]
-void rchitMain(inout HitPayload payload, in BuiltInTriangleIntersectionAttributes attr) {
-//    uint modelId = InstanceID();
-//    uint geometryId = GeometryIndex();
-//	uint triangleId = PrimitiveIndex();
-//
-//    Model model = pushConst.models[modelId];
-//    Mesh mesh = model.meshes[geometryId];
-//	
-//	float3 barycentrics = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
-//    float3 pos = getInterpolatedAttribute<float3>(mesh, triangleId, mesh.vertexDataReflection.positionOffset, barycentrics);
-//    float3 nrm = getInterpolatedDec3nAttribute(mesh, triangleId, mesh.vertexDataReflection.normalOffset, barycentrics);
-//    float3 tng = getInterpolatedDec3nAttribute(mesh, triangleId, mesh.vertexDataReflection.tangentOffset, barycentrics);
-//    float3 bin = getInterpolatedDec3nAttribute(mesh, triangleId, mesh.vertexDataReflection.binormalOffset, barycentrics);
-//    float2 uv = getInterpolatedHalf2Attribute(mesh, triangleId, mesh.vertexDataReflection.uvOffset, barycentrics);
-//    float2 uv2 = getInterpolatedHalf2Attribute(mesh, triangleId, mesh.vertexDataReflection.uv2Offset, barycentrics);
-//	
-//	float3 worldPosition = float3(mul(float4(pos, 1.0), ObjectToWorld4x3()));
-//    float3 worldNormal = normalize(mul(float4(nrm, 0.0), ObjectToWorld4x3()).xyz);
-//    float3 worldTangent = normalize(mul(float4(tng, 0.0), ObjectToWorld4x3()).xyz);
-//    float3 worldBinormal = normalize(mul(float4(bin, 0.0), ObjectToWorld4x3()).xyz);
-//	float distance = length(normalize(worldPosition));
-//
-//	float3 viewDirection = -WorldRayDirection();
-//	float3 lightDirection = normalize(float3(1.0f, 1.0f, 1.0f));
-//
-//    uint materialId = mesh.materialId;
-//
-//    Material material = pushConst.materials[materialId];
-//
-//    MaterialShaderPayload materialShaderPayload;
-//    materialShaderPayload.materialId = materialId;
-//    materialShaderPayload.hit.world_position = worldPosition;
-//    materialShaderPayload.hit.light_direction = lightDirection;
-//    materialShaderPayload.hit.light_color = float3(1.0, 1.0, 1.0);
-//    materialShaderPayload.hit.view_direction = viewDirection;
-//    materialShaderPayload.surface.basis.normal = normalize(worldNormal);
-//    materialShaderPayload.surface.basis.tangent = normalize(worldTangent);
-//    materialShaderPayload.surface.basis.binormal = normalize(worldBinormal);
-//    materialShaderPayload.surface.uv = uv;
-//    materialShaderPayload.surface.uv2 = uv2;
-//
-//    CallShader<MaterialShaderPayload>(material.shaderId, materialShaderPayload);
-//
-//    payload.color = materialShaderPayload.color;
+void rchitMain(inout HitResult result, in BuiltInTriangleIntersectionAttributes attr) {
+    result.isHit = true;
+    result.objectToWorld = ObjectToWorld4x3();
+    result.barycentrics = attr.barycentrics;
+    result.modelId = InstanceID();
+    result.meshId = GeometryIndex();
+    result.triangleId = PrimitiveIndex();
 }
 
 [shader("miss")]
-void rmissMain(inout HitPayload payload) {
-	payload.color = float3(0.0, 0.0, 0.0);
-	payload.depth = MISS_DEPTH;
-}
-
-[shader("miss")]
-void rmissShadowMain(inout ShadowPayload payload) {
-    payload.depth = MISS_DEPTH;
+void rmissMain(inout HitResult result) {
+    result.isHit = false;
 }

@@ -7,3 +7,4 @@
 [[vk::binding(1, 1)]] RWTexture2D<float4> outImage;
 
 static const float INFINITE = 1e32F;
+static const bool USE_SER = true;

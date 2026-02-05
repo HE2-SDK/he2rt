@@ -9,8 +9,13 @@ struct ShadingResult {
 };
 
 struct ShadowPayload {
-    int depth;
+    bool isMiss;
 };
+
+[shader("miss")]
+void rmissShadowMain(inout ShadowPayload payload) {
+    payload.isMiss = true;
+}
 
 bool testShadow(float3 worldPosition, float3 worldNormal, float3 lightDirection) {
     RayDesc ray;
@@ -19,11 +24,18 @@ bool testShadow(float3 worldPosition, float3 worldNormal, float3 lightDirection)
     ray.TMin = 0.001;
     ray.TMax = INFINITE;
 
-    ShadowPayload payload;
+    ShadowPayload payload = ShadowPayload(false);
 
-    HitObject hit = HitObject::TraceRay( tlas, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, 0xFF, 0, 0, 1, ray, payload);
+    if (USE_SER) {
+        HitObject hit = HitObject::TraceRay(tlas, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, 0xFF, 0, 0, 1, ray, payload);
 
-    return hit.IsHit();
+        return hit.IsHit();
+    }
+    else {
+        TraceRay(tlas, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER, 0xFF, 0, 0, 1, ray, payload);
+
+        return !payload.isMiss;
+    }
 }
 
 float3 calculateSunlightContribution(bsdf::pbr::PBRBSDFContext ctx, float3 position) {
