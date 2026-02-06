@@ -41,16 +41,16 @@ add_subdirectory(vendor EXCLUDE_FROM_ALL)
 #add_subdirectory(shaders)
 set(SHADERS
     src/raytracing.slang
-    src/materials/Common_d.slang
-    src/materials/Common_dn.slang
-    src/materials/Common_dp.slang
+    # src/materials/Common_d.slang
+    # src/materials/Common_dn.slang
+    # src/materials/Common_dp.slang
     src/materials/Common_dpn.slang
-    src/materials/Emission_dpnE.slang
-    src/materials/EmissionTone_dpnE.slang
-    src/materials/EmissionTone_dapnE.slang
-    src/materials/Indirect_daon.slang
-    src/materials/Iridescence_ddpNrEa.slang
-    src/materials/IridescenceStone_ddpNrEa.slang
+    # src/materials/Emission_dpnE.slang
+    # src/materials/EmissionTone_dpnE.slang
+    # src/materials/EmissionTone_dapnE.slang
+    # src/materials/Indirect_daon.slang
+    # src/materials/Iridescence_ddpNrEa.slang
+    # src/materials/IridescenceStone_ddpNrEa.slang
     src/post-processing/tonemapper/tonemapper.slang
 )
 
@@ -63,6 +63,7 @@ foreach(source IN LISTS SHADERS)
       -depfile ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.dep
       -o ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv
       -I ${CMAKE_CURRENT_SOURCE_DIR}/src
+      -O2
       ${CMAKE_CURRENT_SOURCE_DIR}/${source}
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.dep
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${source}
@@ -77,6 +78,7 @@ foreach(source IN LISTS SHADERS)
       -source-embed-name ${BASENAME}_shader
       -o ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv
       -I ${CMAKE_CURRENT_SOURCE_DIR}/src
+      -O2
       ${CMAKE_CURRENT_SOURCE_DIR}/${source}
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h.dep
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${source}

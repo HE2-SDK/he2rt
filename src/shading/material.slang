@@ -1,11 +1,6 @@
 #pragma once
 #include "bsdf/pbr.slang"
-
-struct SurfaceParameters {
-    Basis basis;
-    float2 uvs[4];
-    float4 vertexColor;
-};
+#include "surface.slang"
 
 struct MaterialShaderResult {
     bsdf::pbr::MaterialParameters material;
@@ -14,7 +9,6 @@ struct MaterialShaderResult {
 
 struct MaterialShaderPayload {
     uint32_t materialId;
-    //    HitParameters hit;
     SurfaceParameters surface;
     float3 V;
     MaterialShaderResult result;

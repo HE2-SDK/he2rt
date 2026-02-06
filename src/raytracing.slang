@@ -1,10 +1,12 @@
 #include "random.slang"
 #include "shader-types.slang"
 #include <shading/shading.slang>
+#include <shading/surface.slang>
 
 #define MISS_DEPTH 1000
 
 static int MAX_DEPTH = 4;
+static uint SPP = 1;
 
 using namespace he2rt::shaders;
 
@@ -22,84 +24,17 @@ struct HitResult {
     bool isHit;
 };
 
-struct TriangleAttributes<T> {
-	T v0;
-	T v1;
-	T v2;
-};
-
-T getVertexAttribute<T>(Mesh mesh, uint16_t vertexIndex, uint offset) {
-	return *(T*)(mesh.vertexBuffer + vertexIndex * mesh.vertexDataReflection.stride + offset);
-}
-
-TriangleAttributes<T> getTriangleAttributes<T>(Mesh mesh, uint triangleIndex, uint offset) {
-	return {
-		getVertexAttribute<T>(mesh, mesh.indexBuffer[triangleIndex * 3 + 0], offset),
-		getVertexAttribute<T>(mesh, mesh.indexBuffer[triangleIndex * 3 + 1], offset),
-		getVertexAttribute<T>(mesh, mesh.indexBuffer[triangleIndex * 3 + 2], offset),
-	};
-}
-
-T getInterpolatedAttribute<T : IFloat>(Mesh mesh, uint triangleIndex, uint offset, float3 barycentrics) {
-	TriangleAttributes<T> attrs = getTriangleAttributes<T>(mesh, triangleIndex, offset);
-
-	return T(barycentrics.x) * attrs.v0 + T(barycentrics.y) * attrs.v1 + T(barycentrics.z) * attrs.v2;
-}
-
-float4 getInterpolatedUByte4nAttribute(Mesh mesh, uint triangleIndex, uint offset, float3 barycentrics) {
-    TriangleAttributes<uint8_t4> attrs = getTriangleAttributes<uint8_t4>(mesh, triangleIndex, offset);
-
-    return float4(barycentrics.x) * float4(attrs.v0.xyzw) / 255.0 + float4(barycentrics.y) * float4(attrs.v1.xyzw) / 255.0 + float4(barycentrics.z) * float4(attrs.v2.xyzw) / 255.0;
-}
-
-float3 getInterpolatedDec3nAttribute(Mesh mesh, uint triangleIndex, uint offset, float3 barycentrics) {
-	TriangleAttributes<int8_t4> attrs = getTriangleAttributes<int8_t4>(mesh, triangleIndex, offset);
-
-    return float3(barycentrics.x) * float3(attrs.v0.xyz) / 511.0 + float3(barycentrics.y) * float3(attrs.v1.xyz) / 511.0 + float3(barycentrics.z) * float3(attrs.v2.xyz) / 511.0;
-}
-
-float2 getInterpolatedHalf2Attribute(Mesh mesh, uint triangleIndex, uint offset, float3 barycentrics) {
-    TriangleAttributes<half2> attrs = getTriangleAttributes<half2>(mesh, triangleIndex, offset);
-
-    return float2(barycentrics.x) * float2(attrs.v0) + float2(barycentrics.y) * float2(attrs.v1) + float2(barycentrics.z) * float2(attrs.v2);
-}
-
-float3 getPosition(Mesh mesh, uint triangleId, float4x3 objToWorld, float3 barycentrics) {
-    float3 pos = getInterpolatedAttribute<float3>(mesh, triangleId, mesh.vertexDataReflection.positionOffset, barycentrics);
-
-    return mul(float4(pos, 1.0f), objToWorld);
-}
-
-SurfaceParameters collectSurfaceParameters(Mesh mesh, uint triangleId, float4x3 objToWorld, float3 barycentrics) {
-    float3 nrm = getInterpolatedDec3nAttribute(mesh, triangleId, mesh.vertexDataReflection.normalOffset, barycentrics);
-    float3 tng = getInterpolatedDec3nAttribute(mesh, triangleId, mesh.vertexDataReflection.tangentOffset, barycentrics);
-    float3 bin = getInterpolatedDec3nAttribute(mesh, triangleId, mesh.vertexDataReflection.binormalOffset, barycentrics);
-    float2 uv = getInterpolatedHalf2Attribute(mesh, triangleId, mesh.vertexDataReflection.uvOffset, barycentrics);
-    float2 uv2 = getInterpolatedHalf2Attribute(mesh, triangleId, mesh.vertexDataReflection.uv2Offset, barycentrics);
-    float4 color = getInterpolatedUByte4nAttribute(mesh, triangleId, mesh.vertexDataReflection.colorOffset, barycentrics);
-
-    return {
-        Basis(
-            normalize(mul(float4(nrm, 0.0), objToWorld).xyz),
-            normalize(mul(float4(tng, 0.0), objToWorld).xyz),
-            normalize(mul(float4(bin, 0.0), objToWorld).xyz)
-        ),
-        { uv, uv2, uv, uv },
-        color,
-    };
-}
-
 float3 offsetRay(in float3 p, in float3 n)
 {
     // Smallest epsilon that can be added without losing precision is 1.19209e-07, but we play safe
     const float epsilon = 1.0f / 65536.0f; // Safe epsilon
 
-    float magnitude = length(p);
-    float offset = epsilon * magnitude;
+    const float magnitude = length(p);
+    const float offset = epsilon * magnitude;
     // multiply the direction vector by the smallest offset
-    float3 offsetVector = n * offset;
+    const float3 offsetVector = n * offset;
     // add the offset vector to the starting point
-    float3 offsetPoint = p + offsetVector;
+    const float3 offsetPoint = p + offsetVector;
 
     return offsetPoint;
 }
@@ -145,25 +80,25 @@ float3 pathTrace(RayDesc ray, inout uint seed) {
     PathTracingState state = {};
 
     for (int depth = 0; depth < MAX_DEPTH; depth++) {
-        HitResult hit = traceRay(ray, depth);
+        const HitResult hit = traceRay(ray, depth);
 
         if (!hit.isHit) {
             break;
         }
 
-        Model model = pushConst.models[hit.modelId];
-        Mesh mesh = model.meshes[hit.meshId];
-
-        float3 viewDirection = -ray.Direction;
-
         // Collect some basic information
-        float3 barycentrics = float3(1 - hit.barycentrics.x - hit.barycentrics.y, hit.barycentrics.x, hit.barycentrics.y);
-        float3 position = getPosition(mesh, hit.triangleId, hit.objectToWorld, barycentrics);
-        SurfaceParameters surface = collectSurfaceParameters(mesh, hit.triangleId, hit.objectToWorld, barycentrics);
+        const float3 viewDirection = -ray.Direction;
+        const float3 barycentrics = float3(1 - hit.barycentrics.x - hit.barycentrics.y, hit.barycentrics.x, hit.barycentrics.y);
+
+        const Model model = pushConst.models[hit.modelId];
+        const Mesh mesh = model.meshes[hit.meshId];
+
+        const float3 position = getPosition(mesh, hit.triangleId, hit.objectToWorld, barycentrics);
+        const SurfaceParameters surface = getSurfaceParameters(mesh, hit.triangleId, hit.objectToWorld, barycentrics);
 
         // Look up the material
-        uint materialId = mesh.materialId;
-        Material material = pushConst.materials[materialId];
+        const uint materialId = mesh.materialId;
+        const Material material = pushConst.materials[materialId];
 
         // Call the material shader
         MaterialShaderPayload materialShaderPayload = { materialId, surface, viewDirection };
@@ -175,19 +110,19 @@ float3 pathTrace(RayDesc ray, inout uint seed) {
         // Add total contribution to radiance;
         state.radiance += calculateMaterialContribution(ctx, materialShaderPayload.result.emission, position) * state.throughput;
 
-        float3 sampledDir = bsdf::pbr::sampleBSDF(ctx, float3(rand(seed), rand(seed), rand(seed)));
-        BSDFEvaluationResult sampled = bsdf::pbr::evaluateBSDF(ctx, sampledDir);
+        const float3 sampledDir = bsdf::pbr::sampleBSDF(ctx, float3(rand(seed), rand(seed), rand(seed)));
+        const BSDFEvaluationResult sampled = bsdf::pbr::evaluateBSDF(ctx, sampledDir);
 
-        float3 throughput = sampled.color / sampled.pdf;
+        const float3 throughput = sampled.color / sampled.pdf;
         state.throughput *= any(isnan(throughput)) || sampled.pdf < 0.0001f ? 0.0f : throughput;
 
         // Russian roulette
-        float rrPcont = min(max(state.throughput.x, max(state.throughput.y, state.throughput.z)) + 0.001F, 0.95F);
+        const float rrPcont = min(max(state.throughput.x, max(state.throughput.y, state.throughput.z)) + 0.001F, 0.95F);
         if (rand(seed) >= rrPcont)
             break;
         state.throughput /= rrPcont;
 
-        ray.Origin = offsetRay(position, surface.basis.normal);
+        ray.Origin = offsetRay(position, materialShaderPayload.result.material.normal);
         ray.Direction = sampledDir;
     }
 
@@ -211,7 +146,7 @@ float3 pathTracePixel(inout uint seed) {
 
     float3 radiance = pathTrace(ray, seed);
 
-    float lum = dot(radiance, float3(0.212671F, 0.715160F, 0.072169F));
+    const float lum = dot(radiance, float3(0.212671F, 0.715160F, 0.072169F));
     const float fireflyClampThreshold = 10.0f;
     if (lum > fireflyClampThreshold) {
         radiance *= fireflyClampThreshold / lum;
@@ -229,15 +164,15 @@ void rgenMain() {
 
     float3 color = float3(0.0f, 0.0f, 0.0f);
 
-    for (uint i = 0; i < 8; i++) {
+    for (uint i = 0; i < SPP; i++) {
         color += pathTracePixel(seed);
     }
 
-    color /= 8;
+    color /= SPP;
 
     if (pushConst.frame > 0) {
-        float a = 1.0f / float(pushConst.frame + 1);
-        float3 old_color = outImage[int2(launchID)].xyz;
+        const float a = 1.0f / float(pushConst.frame + 1);
+        const float3 old_color = outImage[int2(launchID)].xyz;
         outImage[int2(launchID)] = float4(lerp(old_color, color, a), 1.f);
     }
     else {
