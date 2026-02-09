@@ -85,6 +85,7 @@ namespace he2rt {
                 vk::KHRAccelerationStructureExtensionName,
                 vk::KHRBufferDeviceAddressExtensionName,
                 vk::NVRayTracingInvocationReorderExtensionName,
+                vk::GOOGLEUserTypeExtensionName,
 #ifdef _DEBUG
                 vk::NVDeviceDiagnosticCheckpointsExtensionName,
                 vk::NVDeviceDiagnosticsConfigExtensionName,

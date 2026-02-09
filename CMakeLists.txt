@@ -19,12 +19,7 @@ FetchContent_Declare(
     GIT_REPOSITORY  https://github.com/skypjack/entt.git
     GIT_TAG         v3.16.0
 )
-FetchContent_Declare(
-    dds_image
-    GIT_REPOSITORY  https://github.com/spnda/dds_image.git
-    GIT_TAG         84a7bd47293a87214d454992deb8fdf3cba91c48
-)
-FetchContent_MakeAvailable(eigen glfw vmahpp entt dds_image)
+FetchContent_MakeAvailable(eigen glfw vmahpp entt)
 
 set(PROJECT_AUTHOR "angryzor")
 set(PROJECT_COPYRIGHT "Copyright (c) 2024 angryzor - Licensed under GPL3")
@@ -41,16 +36,18 @@ add_subdirectory(vendor EXCLUDE_FROM_ALL)
 #add_subdirectory(shaders)
 set(SHADERS
     src/raytracing.slang
-    # src/materials/Common_d.slang
-    # src/materials/Common_dn.slang
-    # src/materials/Common_dp.slang
+    src/heightmap/buildas/buildasinitialize.slang
+    src/heightmap/buildas/buildasgeneratemips.slang
+    src/materials/Common_d.slang
+    src/materials/Common_dn.slang
+    src/materials/Common_dp.slang
     src/materials/Common_dpn.slang
-    # src/materials/Emission_dpnE.slang
-    # src/materials/EmissionTone_dpnE.slang
-    # src/materials/EmissionTone_dapnE.slang
-    # src/materials/Indirect_daon.slang
-    # src/materials/Iridescence_ddpNrEa.slang
-    # src/materials/IridescenceStone_ddpNrEa.slang
+    src/materials/Emission_dpnE.slang
+    src/materials/EmissionTone_dpnE.slang
+    src/materials/EmissionTone_dapnE.slang
+    src/materials/Indirect_daon.slang
+    src/materials/Iridescence_ddpNrEa.slang
+    src/materials/IridescenceStone_ddpNrEa.slang
     src/post-processing/tonemapper/tonemapper.slang
 )
 
@@ -64,6 +61,7 @@ foreach(source IN LISTS SHADERS)
       -o ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv
       -I ${CMAKE_CURRENT_SOURCE_DIR}/src
       -O2
+      -fspv-reflect
       ${CMAKE_CURRENT_SOURCE_DIR}/${source}
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.dep
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${source}
@@ -79,6 +77,7 @@ foreach(source IN LISTS SHADERS)
       -o ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv
       -I ${CMAKE_CURRENT_SOURCE_DIR}/src
       -O2
+      -fspv-reflect
       ${CMAKE_CURRENT_SOURCE_DIR}/${source}
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h ${CMAKE_CURRENT_BINARY_DIR}/${FILENAME}.spv.h.dep
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${source}
@@ -89,9 +88,30 @@ foreach(source IN LISTS SHADERS)
 endforeach()
 
 add_executable(he2-rt ${SPV_SHADERS})
-target_include_directories(he2-rt PRIVATE "C:/VulkanSDK/1.4.335.0/Include" "C:/Program Files/NVIDIA Corporation/Nsight Graphics 2025.5.0/SDKs/NsightAftermathSDK/2025.5.0.251114/include" ${CMAKE_CURRENT_BINARY_DIR})
-target_link_directories(he2-rt PRIVATE "C:/VulkanSDK/1.4.335.0/Lib" "C:/Program Files/NVIDIA Corporation/Nsight Graphics 2025.5.0/SDKs/NsightAftermathSDK/2025.5.0.251114/lib/x64")
-target_link_libraries(he2-rt PRIVATE vulkan-1 $<$<CONFIG:Debug>:GFSDK_Aftermath_Lib.x64> glfw EnTT::EnTT VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp Eigen3::Eigen rip-hl dds_image imgui-backend-glfw imgui-backend-vulkan)
+target_include_directories(he2-rt PRIVATE
+    "C:/VulkanSDK/1.4.335.0/Include"
+    "C:/Program Files/NVIDIA Corporation/Nsight Graphics 2025.5.0/SDKs/NsightAftermathSDK/2025.5.0.251114/include"
+    "C:/Program Files/NVIDIA Corporation/NVIDIA Texture Tools/include"
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_link_directories(he2-rt PRIVATE
+    "C:/VulkanSDK/1.4.335.0/Lib"
+    "C:/Program Files/NVIDIA Corporation/Nsight Graphics 2025.5.0/SDKs/NsightAftermathSDK/2025.5.0.251114/lib/x64"
+    "C:/Program Files/NVIDIA Corporation/NVIDIA Texture Tools/lib/x64-v142"
+)
+target_link_libraries(he2-rt PRIVATE
+    vulkan-1
+    glfw
+    EnTT::EnTT
+    VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp
+    Eigen3::Eigen
+    rip-hl
+    dds_image
+    imgui-backend-glfw
+    imgui-backend-vulkan
+    nvtt30205
+    $<$<CONFIG:Debug>:GFSDK_Aftermath_Lib.x64>
+)
 target_compile_features(he2-rt PRIVATE cxx_std_20)
 target_compile_definitions(he2-rt PRIVATE
     VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1

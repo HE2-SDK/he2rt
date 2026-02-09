@@ -30,6 +30,7 @@ namespace he2rt {
             vk::KHRRayTracingPipelineExtensionName,
             vk::KHRDeferredHostOperationsExtensionName,
             vk::NVRayTracingInvocationReorderExtensionName,
+            vk::GOOGLEUserTypeExtensionName,
 #ifdef _DEBUG
             vk::NVDeviceDiagnosticCheckpointsExtensionName,
             vk::NVDeviceDiagnosticsConfigExtensionName,

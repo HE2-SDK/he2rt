@@ -1,3 +1,6 @@
 [submodule "vendor/imgui/imgui"]
 	path = vendor/imgui/imgui
 	url = https://github.com/ocornut/imgui.git
+[submodule "vendor/dds_image"]
+	path = vendor/dds_image
+	url = https://github.com/angryzor/dds_image.git

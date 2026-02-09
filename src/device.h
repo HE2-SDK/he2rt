@@ -66,5 +66,24 @@ namespace he2rt {
             queues.graphics.submit2({ vk::SubmitInfo2{ {}, {}, submitInfos } }, fence);
             device.waitForFences({ fence }, VK_TRUE, UINT64_MAX);
         }
-	};
+
+        //template<typename F>
+        //auto runOneTimeCommandBufferResult(F f) {
+        //    auto cmdBuffers = device.allocateCommandBuffers({ tempCommands, vk::CommandBufferLevel::ePrimary, 1 });
+        //    vk::CommandBuffer cmdBuffer{ cmdBuffers[0] };
+
+        //    cmdBuffer.begin({ vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+        //    auto result = f(cmdBuffer);
+        //    cmdBuffer.end();
+
+        //    auto fence = device.createFence({});
+
+        //    std::array<vk::CommandBufferSubmitInfo, 1> submitInfos{ cmdBuffer };
+
+        //    queues.graphics.submit2({ vk::SubmitInfo2{ {}, {}, submitInfos } }, fence);
+        //    device.waitForFences({ fence }, VK_TRUE, UINT64_MAX);
+
+        //    return result;
+        //}
+    };
 }

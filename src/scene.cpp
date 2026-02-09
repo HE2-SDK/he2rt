@@ -786,18 +786,11 @@ namespace he2rt {
         vk::ImageCreateInfo imageCreateInfo{ dds::getVulkanImageCreateInfo(&ddsImage) };
         vk::ImageViewCreateInfo imageViewCreateInfo{ dds::getVulkanImageViewCreateInfo(&ddsImage) };
 
+        imageCreateInfo.mipLevels = 1;
+        imageViewCreateInfo.subresourceRange.levelCount = 1;
+
         imageCreateInfo.usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst;
         imageCreateInfo.samples = vk::SampleCountFlagBits::e1;
-
-        if (ddsImage.format == DXGI_FORMAT_BC6H_UF16) {
-            imageCreateInfo.format = vk::Format::eBc6HUfloatBlock;
-            imageViewCreateInfo.format = vk::Format::eBc6HUfloatBlock;
-        }
-
-        if (ddsImage.format == DXGI_FORMAT_BC6H_SF16) {
-            imageCreateInfo.format = vk::Format::eBc6HSfloatBlock;
-            imageViewCreateInfo.format = vk::Format::eBc6HSfloatBlock;
-        }
 
         return { std::move(ddsImage), std::move(imageCreateInfo), std::move(imageViewCreateInfo) };
     }
