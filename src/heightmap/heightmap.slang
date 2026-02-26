@@ -17,5 +17,5 @@ bool raycastHeightmap(Texture2D<float2> heightmap, Texture2D<float2> hmas, Ray<3
 	const float heightBottomRight = heightmap[hmasHit + uint2(1, 1)].x;
 	const float heightBottomLeft = heightmap[hmasHit + uint2(0, 1)].x;
 
-	if (!raycastTriangle(Triangle(
+	if (!raycastTriangle(Triangle(hmasHitF + 
 }

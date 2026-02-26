@@ -41,4 +41,4 @@ target_sources(he2-rt
 		"$<$<CONFIG:Debug>:${CMAKE_CURRENT_SOURCE_DIR}/gpu-crash-tracker.h>"
 		"$<$<CONFIG:Debug>:${CMAKE_CURRENT_SOURCE_DIR}/gpu-crash-tracker.cpp>"
  #"post-processing/bloom/shader-types.h" "post-processing/bloom/bloom.cpp"
- "heightmap/buildas/shader-types.h" "heightmap/buildas/buildas.h" "heightmap/buildas/buildas.cpp" "simple-shader.h" "heightmap/buildas/initialize-shader.h" "heightmap/buildas/initialize-shader.cpp" "heightmap/buildas/generate-mips-shader.cpp" "heightmap/buildas/generate-mips-shader.h")
+ "heightmap/buildas/shader-types.h" "heightmap/buildas/buildas.h" "heightmap/buildas/buildas.cpp" "heightmap/buildas/initialize-shader.h" "heightmap/buildas/initialize-shader.cpp" "heightmap/buildas/generate-mips-shader.cpp" "heightmap/buildas/generate-mips-shader.h")

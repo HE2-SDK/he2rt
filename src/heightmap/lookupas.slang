@@ -76,12 +76,11 @@ struct HMASMipRaycastContext {
 		while (gridRaymarchContext.next(hitLoc)) {
 			const int2 hitLocInUVCoords = int2(hitLoc.x, -hitLoc.y) + halfGridSize;
 
-			float cellMin = min(min(hmas.mips[lodLevel][hitLoc].x, hmas.mips[lodLevel][hitLoc + uint2(1, 0)].x), min(hmas.mips[lodLevel][hitLoc + uint2(1, 1)].x, hmas.mips[lodLevel][hitLoc + uint2(0, 1)].x));
-			float cellMax = max(max(hmas.mips[lodLevel][hitLoc].y, hmas.mips[lodLevel][hitLoc + uint2(1, 0)].y), max(hmas.mips[lodLevel][hitLoc + uint2(1, 1)].y, hmas.mips[lodLevel][hitLoc + uint2(0, 1)].y));
-			
+			float2 cellMinMax = hmas.mips[lodLevel][hitLoc];
+
 			// Again, grid is offset so compensate.
-			float3 cellCoordsMin = float3((float2(hitLoc) - 0.5) * cellSize, cellMin);
-			float3 cellCoordsMax = float3(cellCoordsMin.xy + cellSize, cellMax);
+			float3 cellCoordsMin = float3((float2(hitLoc) - 0.5) * cellSize, cellMinMax.x);
+			float3 cellCoordsMax = float3(cellCoordsMin.xy + cellSize, cellMinMax.y);
 
 			if (raycastAABB(AABB<float, 3>(cellCoordsMin, cellCoordsMax), ray)) {
 				return true;

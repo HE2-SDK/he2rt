@@ -16,6 +16,7 @@
  * SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
+// Edited by angryzor to integrate and add some basic HDR tonemapping.
 
 #include "shader-types.h"
 
