@@ -1,8 +1,8 @@
 # HE2RT
 
 HE2RT is an in development hardware accelerated path tracing renderer for Hedgehog Engine 2 built on the Vulkan API.
-Once finished, it will be possible to use HE2RT used both to bake lightmaps and
-lightfields for custom stages, and as a replacement realtime renderer for HE2 games.
+Once finished, it will be possible to use HE2RT both to bake lightmaps and
+lightfields for custom stages, and as a replacement realtime renderer for Hedgehog Engine 2 games like Sonic Frontiers and Shadow Generations.
 
 # Screenshots
 
