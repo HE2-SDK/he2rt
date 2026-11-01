@@ -77,81 +77,71 @@ namespace he2rt {
     }
 
     void Scene::addModel(const std::string& name, const std::string& filename) {
-        std::ifstream ifs{ filename, std::ios::binary | std::ios::ate };
-        size_t fileSize = ifs.tellg();
+        auto fileData = loadFile(filename);
 
-        auto fileData = std::make_unique<uint8_t[]>(fileSize);
-
-        ifs.seekg(std::ios::beg);
-        ifs.read((char*)&fileData[0], fileSize);
-
-        imemstream ims{ (char*)&fileData[0], fileSize };
+        rip::binary::mem_istream mis{ fileData.get() };
+        rip::binary::binary_istream<decltype(mis), unsigned int> bis{ mis, std::endian::big };
 
         ucsl::magic_t<8> magic{};
-        ims.read(magic.buffer.data(), 8);
-        ims.seekg(0);
+        mis.read(magic.buffer.data(), 8);
+        mis.seekg(0);
 
         if (magic == "NEDARCV1") {
             bool found{};
-            rip::binary::containers::needle_archive::v1::NeedleArchiveReader<unsigned int> reader{ ims };
+            rip::binary::containers::needle_archive::v1::NeedleArchiveReader reader{ bis };
             reader.forEachChunk([&](auto& chunk) {
                 if (found) return;
                 if (chunk.header.magic == "NEDMDLV5") {
-                    addModel<false, true>(name, ims);
+                    addModel(name, chunk.stream);
                     found = true;
                 }
             });
         }
         else {
-            addModel(name, ims);
+            addModel(name, bis);
         }
     }
 
     void Scene::addTerrainModel(const std::string& name, const std::string& filename) {
-        std::ifstream ifs{ filename, std::ios::binary | std::ios::ate };
-        size_t fileSize = ifs.tellg();
+        auto fileData = loadFile(filename);
 
-        auto fileData = std::make_unique<uint8_t[]>(fileSize);
-
-        ifs.seekg(std::ios::beg);
-        ifs.read((char*)&fileData[0], fileSize);
-
-        imemstream ims{ (char*)&fileData[0], fileSize };
+        rip::binary::mem_istream mis{ fileData.get() };
+        rip::binary::binary_istream<decltype(mis), unsigned int> bis{ mis, std::endian::big };
 
         ucsl::magic_t<8> magic{};
-        ims.read(magic.buffer.data(), 8);
-        ims.seekg(0);
+        mis.read(magic.buffer.data(), 8);
+        mis.seekg(0);
 
         if (magic == "NEDARCV1") {
             bool found{};
-            rip::binary::containers::needle_archive::v1::NeedleArchiveReader<unsigned int> reader{ ims };
+            rip::binary::containers::needle_archive::v1::NeedleArchiveReader reader{ bis };
             reader.forEachChunk([&](auto& chunk) {
                 if (found) return;
                 if (chunk.header.magic == "NEDMDLV5") {
-                    addTerrainModel<false, true>(name, ims);
+                    addTerrainModel(name, chunk.stream);
                     found = true;
                 }
             });
         }
         else {
-            addTerrainModel(name, ims);
+            addTerrainModel(name, bis);
         }
     }
 
     void Scene::addTextureStreamingPackage(const std::string& name, const std::string& filename) {
         std::ifstream ifs{ filename, std::ios::binary };
         rip::binary::fast_istream fis{ ifs };
-        rip::binary::binary_istream<size_t> stream{ fis, std::endian::native, 0ull };
+        rip::binary::binary_istream<decltype(fis), size_t> stream{ fis };
 
-        ucsl::reflection::providers::BoundProvider::RootType refl{ ucsl::reflection::providers::simplerfl<GI, size_t>::Type<ucsl::resources::ntsp::v1::reflections::NeedleTextureStreamingPackage>{} };
-        typename rip::accessors::binary_istream<std::remove_reference_t<decltype(stream)>>::template ValueAccessor<decltype(refl)> acc{ stream, refl };
+        ucsl::reflection::providers::simplerfl<GI>::RootType<ucsl::resources::ntsp::v1::reflections::NeedleTextureStreamingPackage> refl{};
+        rip::binary::accessors::binary_istream<decltype(stream)>::ValueAccessor<decltype(refl)> acc{ stream, refl };
 
         auto ntsp = acc.as_structure();
 
         auto textures = ntsp.get_field<"textures">().as_carray();
         auto mipmaps = ntsp.get_field<"mipmaps">().as_carray();
         size_t tocSize = ntsp.get_field<"tocSize">().as_primitive().as<size_t>();
-        size_t textureCount = textures.get_length();
+        size_t textureCount = textures.size();
 
         std::unordered_map<std::string, TextureStreamingPackage::TextureInfo> textureInfos{};
         textureInfos.reserve(textureCount);
@@ -173,7 +163,7 @@ namespace he2rt {
             for (size_t j = 0; j < mipmapCount; j++) {
                 auto mipmap = mipmaps[mipmapOffset + j].as_structure();
 
-                auto data = mipmap.get_field<"data">().as_pointer().get().value().as_carray();
+                auto data = (*mipmap.get_field<"data">().as_pointer()).as_carray();
                 auto size = mipmap.get_field<"size">().as_primitive().as<size_t>();
 
                 mipmapInfos.emplace_back(data.reference.offset, size);
@@ -196,7 +186,7 @@ namespace he2rt {
         auto fileData = std::make_unique<uint8_t[]>(fileSize);
 
         ifs.seekg(std::ios::beg);
-        ifs.read((char*)&fileData[0], fileSize);
+        ifs.read((char*)fileData.get(), fileSize);
 
         if (*((ucsl::magic_t<4>*)fileData.get()) == "NTSI") {
             addStreamingTexture(name, fileData.get(), fileSize);
@@ -206,8 +196,13 @@ namespace he2rt {
         }
     }
 
-    void Scene::addMaterial(const std::string& name, std::istream& stream) {
-        rip::binary::containers::mirage::v2::MirageResourceImageReader<unsigned int, true, false> reader{ stream };
+    void Scene::addMaterial(const std::string& name, const std::string& filename) {
+        auto fileData = loadFile(filename);
+
+        rip::binary::mem_istream mis{ fileData.get() };
+        rip::binary::binary_istream<decltype(mis), unsigned int> stream{ mis, std::endian::big };
+
+        rip::binary::containers::mirage::v2::MirageResourceImageReader reader{ stream };
 
         auto rootNode = reader.get_root_node();
 
@@ -216,8 +211,8 @@ namespace he2rt {
                 if (materialChild.header.magic == "Contexts") {
                     auto& stream = materialChild.get_stream();
 
-                    ucsl::reflection::providers::BoundProvider::RootType refl{ ucsl::reflection::providers::simplerfl<GI, unsigned int>::Type<ucsl::resources::material::v3::reflections::ContextsData>{} };
-                    typename rip::accessors::binary_istream<std::remove_reference_t<decltype(stream)>>::template ValueAccessor<decltype(refl)> acc{ stream, refl };
+                    ucsl::reflection::providers::simplerfl<GI>::RootType<ucsl::resources::material::v3::reflections::ContextsData> refl{};
+                    typename rip::binary::accessors::template binary_istream<std::remove_reference_t<decltype(stream)>>::template ValueAccessor<decltype(refl)> acc{ stream, refl };
 
                     auto contexts = acc.as_structure();
 
@@ -236,8 +231,8 @@ namespace he2rt {
                         subShaderName = "Common_dpn";
                     }
 
-                    auto textureNames = contexts.get_field<"textureNames">().as_pointer().get().value().as_carray();
-                    auto textures = contexts.get_field<"textures">().as_pointer().get().value().as_carray();
+                    auto textureNames = (*contexts.get_field<"textureNames">().as_pointer()).as_carray();
+                    auto textures = (*contexts.get_field<"textures">().as_pointer()).as_carray();
                     auto alphaThreshold = contexts.get_field<"alphaThreshold">().as_primitive().as<unsigned char>();
                     auto noBackfaceCulling = contexts.get_field<"noBackfaceCulling">().as_primitive().as<bool>();
                     auto blendMode = contexts.get_field<"blendMode">().as_enum();
@@ -384,8 +379,8 @@ namespace he2rt {
                     auto* shaderParams{ util::align(shaderParamsPtr.get(), 16)};
                     std::unordered_map<std::string, uint32_t> curIndices{};
 
-                    for (size_t i = 0; i < textures.get_length(); i++) {
-                        auto texture = textures[i].as_pointer().get().value().as_structure();
+                    for (size_t i = 0; i < textures.size(); i++) {
+                        auto texture = (*textures[i].as_pointer()).as_structure();
                         std::string name = texture.get_field<"name">().as_primitive().as<const char*>();
                         std::string type = texture.get_field<"type">().as_primitive().as<const char*>();
                         uint32_t idx = curIndices[type]++;
@@ -430,13 +425,13 @@ namespace he2rt {
                     }
 
                     if (floatParamCount > 0) {
-                        auto floatParams = contexts.get_field<"floatParams">().as_pointer().get().value().as_carray();
+                        auto floatParams = (*contexts.get_field<"floatParams">().as_pointer()).as_carray();
 
-                        for (size_t i = 0; i < floatParams.get_length(); i++) {
-                            auto param = floatParams[i].as_pointer().get().value().as_structure();
+                        for (size_t i = 0; i < floatParams.size(); i++) {
+                            auto param = (*floatParams[i].as_pointer()).as_structure();
 
                             std::string name = param.get_field<"name">().as_primitive().as<const char*>();
-                            auto values = param.get_field<"values">().as_pointer().get().value().as_carray();
+                            auto values = (*param.get_field<"values">().as_pointer()).as_carray();
                             auto offsetIt = inputLayout.offsets.find(name);
 
                             if (offsetIt == inputLayout.offsets.end())
@@ -444,7 +439,7 @@ namespace he2rt {
 
                             auto* shaderParam = (float4*)&shaderParams[offsetIt->second];
 
-                            for (size_t j = 0; j < values.get_length(); j++) {
+                            for (size_t j = 0; j < values.size(); j++) {
                                 auto singleValue = values[j].as_carray();
 
                                 std::cout << name << ": "
@@ -465,13 +460,13 @@ namespace he2rt {
                     }
 
                     if (uintParamCount > 0) {
-                        auto uintParams = contexts.get_field<"uintParams">().as_pointer().get().value().as_carray();
+                        auto uintParams = (*contexts.get_field<"uintParams">().as_pointer()).as_carray();
 
-                        for (size_t i = 0; i < uintParams.get_length(); i++) {
-                            auto param = uintParams[i].as_pointer().get().value().as_structure();
+                        for (size_t i = 0; i < uintParams.size(); i++) {
+                            auto param = (*uintParams[i].as_pointer()).as_structure();
 
                             std::string name = param.get_field<"name">().as_primitive().as<const char*>();
-                            auto values = param.get_field<"values">().as_pointer().get().value().as_carray();
+                            auto values = (*param.get_field<"values">().as_pointer()).as_carray();
                             auto offsetIt = inputLayout.offsets.find(name);
 
                             if (offsetIt == inputLayout.offsets.end())
@@ -479,7 +474,7 @@ namespace he2rt {
 
                             auto* shaderParam = (uint4*)&shaderParams[offsetIt->second];
 
-                            for (size_t j = 0; j < values.get_length(); j++) {
+                            for (size_t j = 0; j < values.size(); j++) {
                                 auto singleValue = values[j].as_carray();
 
                                 std::cout << name << ": "
@@ -500,13 +495,13 @@ namespace he2rt {
                     }
 
                     if (boolParamCount > 0) {
-                        auto boolParams = contexts.get_field<"boolParams">().as_pointer().get().value().as_carray();
+                        auto boolParams = (*contexts.get_field<"boolParams">().as_pointer()).as_carray();
 
-                        for (size_t i = 0; i < boolParams.get_length(); i++) {
-                            auto param = boolParams[i].as_pointer().get().value().as_structure();
+                        for (size_t i = 0; i < boolParams.size(); i++) {
+                            auto param = (*boolParams[i].as_pointer()).as_structure();
 
                             std::string name = param.get_field<"name">().as_primitive().as<const char*>();
-                            auto values = param.get_field<"values">().as_pointer().get().value().as_carray();
+                            auto values = (*param.get_field<"values">().as_pointer()).as_carray();
                             auto offsetIt = inputLayout.offsets.find(name);
 
                             if (offsetIt == inputLayout.offsets.end())
@@ -514,7 +509,7 @@ namespace he2rt {
 
                             auto* shaderParam = (bool4*)&shaderParams[offsetIt->second];
 
-                            for (size_t j = 0; j < values.get_length(); j++) {
+                            for (size_t j = 0; j < values.size(); j++) {
                                 auto singleValue = values[j].as_carray();
 
                                 std::cout << name << ": "
@@ -615,20 +610,6 @@ namespace he2rt {
         }
     }
 
-    void Scene::addMaterial(const std::string& name, const std::string& filename) {
-        std::ifstream ifs{ filename, std::ios::binary | std::ios::ate };
-        size_t fileSize = ifs.tellg();
-
-        auto fileData = std::make_unique<uint8_t[]>(fileSize);
-
-        ifs.seekg(std::ios::beg);
-        ifs.read((char*)&fileData[0], fileSize);
-
-        imemstream ims{ (char*)&fileData[0], fileSize };
-
-        addMaterial(name, ims);
-    }
-
     void Scene::addMaterialShader(const std::string& name, const uint32_t* data, size_t size, const MaterialShader::Reflection& reflection) {
         uint32_t shaderId{ (uint32_t)shaders.size() };
         shaders.emplace_back(data, size);//device.device.createShaderModule({ {}, size, data }));
@@ -662,20 +643,6 @@ namespace he2rt {
         });
     }
 
-    void Scene::addModelInstances(const std::string& filename) {
-        std::ifstream ifs{ filename, std::ios::binary | std::ios::ate };
-        size_t fileSize = ifs.tellg();
-
-        auto fileData = std::make_unique<uint8_t[]>(fileSize);
-
-        ifs.seekg(std::ios::beg);
-        ifs.read((char*)&fileData[0], fileSize);
-
-        imemstream ims{ (char*)&fileData[0], fileSize };
-
-        addModelInstances(ims);
-    }
-
     Eigen::Quaternionf FromPCRotation(const Eigen::Vector3f& rotation, ucsl::resources::pointcloud::v2::RotationOrder rotationOrder) {
         switch (rotationOrder) {
         case ucsl::resources::pointcloud::v2::RotationOrder::XYZ: return Eigen::AngleAxisf(rotation[2], Eigen::Vector3f::UnitZ()) * Eigen::AngleAxisf(rotation[1], Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(rotation[0], Eigen::Vector3f::UnitX());
@@ -688,19 +655,23 @@ namespace he2rt {
         }
     }
 
-    void Scene::addModelInstances(std::istream& stream) {
-        rip::binary::containers::binary_file::v2::BinaryFileReader<uint64_t> bfr{ stream };
+    void Scene::addModelInstances(const std::string& filename) {
+        auto fileData = loadFile(filename);
+
+        rip::binary::mem_istream mis{ fileData.get() };
+        rip::binary::binary_istream<decltype(mis), size_t> bis{ mis };
+
+        rip::binary::containers::binary_file::v2::BinaryFileReader bfr{ bis };
         
         auto chunk = bfr.getNextDataChunk();
 
-        ucsl::reflection::providers::BoundProvider::RootType refl{ ucsl::reflection::providers::simplerfl<GI, uint64_t>::Type<ucsl::resources::pointcloud::v2::reflections::PointcloudData>{} };
-
-        typename rip::accessors::binary_istream<std::remove_reference_t<decltype(chunk)>>::template ValueAccessor<decltype(refl)> acc{ chunk, refl };
+        ucsl::reflection::providers::simplerfl<GI>::RootType<ucsl::resources::pointcloud::v2::reflections::PointcloudData> refl{};
+        rip::binary::accessors::binary_istream<decltype(chunk)>::ValueAccessor<decltype(refl)> acc{ chunk, refl };
 
         auto pointcloudData = acc.as_structure();
-        auto instances = pointcloudData.get_field<"instances">().as_pointer().get().value().as_carray();
+        auto instances = (*pointcloudData.get_field<"instances">().as_pointer()).as_carray();
 
-        for (size_t i = 0; i < instances.get_length(); i++) {
+        for (size_t i = 0; i < instances.size(); i++) {
             auto instance = instances[i].as_structure();
 
             std::string name = instance.get_field<"name">().as_primitive().as<const char*>();
@@ -883,8 +854,9 @@ namespace he2rt {
     }
 
     void Scene::addStreamingTexture(const std::string& name, uint8_t* data, size_t size) {
-        imemstream ims{ (char*)data, size };
-        rip::binary::containers::ntsi::v1::NeedleTextureStreamingInfoReader<size_t> reader{ ims };
+        rip::binary::mem_istream mis{ data };
+        rip::binary::binary_istream<decltype(mis), size_t> bis{ mis };
+        rip::binary::containers::ntsi::v1::NeedleTextureStreamingInfoReader reader{ bis };
 
         auto data$ = reader.getStream();
 
@@ -893,7 +865,7 @@ namespace he2rt {
         size_t ddsHeaderSize = size - data$.tellg();
         auto ddsHeaderData = std::make_unique<uint8_t[]>(ddsHeaderSize);
 
-        ims.read((char*)ddsHeaderData.get(), ddsHeaderSize);
+        mis.read((char*)ddsHeaderData.get(), ddsHeaderSize);
 
         DDSImageCreateInfo ddsImage = readDDSImage(ddsHeaderData.get(), ddsHeaderSize);
 
@@ -931,5 +903,17 @@ namespace he2rt {
         //    ifs.read((char*)mipImgData.get(), mip.size);
         //    ofs.write((char*)mipImgData.get(), mip.size);
         //}
+    }
+
+    std::unique_ptr<uint8_t[]> Scene::loadFile(const std::string& filename) {
+        std::ifstream ifs{ filename, std::ios::binary | std::ios::ate };
+        size_t fileSize = ifs.tellg();
+
+        auto fileData = std::make_unique<uint8_t[]>(fileSize);
+
+        ifs.seekg(std::ios::beg);
+        ifs.read((char*)fileData.get(), fileSize);
+
+        return std::move(fileData);
     }
 }

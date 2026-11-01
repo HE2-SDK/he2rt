@@ -16,7 +16,6 @@
 #include <rip/binary/containers/mirage/v2.h>
 #include <rip/binary/containers/binary-file/v2.h>
 #include <rip/binary/containers/ntsi/v1.h>
-#include <rip/binary/serialization/ReflectionDeserializer.h>
 #include <rip/binary/stream.h>
 #include <ucsl-reflection/game-interfaces/standalone/game-interface.h>
 #include <ucsl-reflection/providers/simplerfl.h>
@@ -24,7 +23,6 @@
 #include <ucsl-reflection/reflections/resources/model/v5.h>
 #include <ucsl-reflection/reflections/resources/pointcloud/v2.h>
 #include <ucsl-reflection/reflections/resources/ntsp/v1.h>
-#include <ucsl-reflection/bound-reflection.h>
 #include <rip/binary/accessors/binary-stream.h>
 #include <dds.hpp>
 #include "mem_stream.h"
@@ -141,14 +139,14 @@ namespace he2rt {
 				unsigned int vertexCount = mesh.get_field<"vertexCount">().as_primitive().as<unsigned int>();
 				unsigned int triangleCount = indexCount / 3u;
 
-				auto indices = mesh.get_field<"indices">().as_pointer().get().value().as_carray();
+				auto indices = (*mesh.get_field<"indices">().as_pointer()).as_carray();
 				size_t indexBufSize = indexCount * sizeof(unsigned short);
 				std::vector<unsigned short> indexBuf(indexCount);
 
 				for (size_t i = 0; i < indexCount; i++)
 					indexBuf[i] = indices[i].as_primitive().as<unsigned short>();
 
-				auto vertexData = mesh.get_field<"vertexData">().as_pointer().get().value().as_carray();
+				auto vertexData = (*mesh.get_field<"vertexData">().as_pointer()).as_carray();
 				unsigned int vertexStride = mesh.get_field<"vertexStride">().as_primitive().as<unsigned int>();
 
 				size_t vertexBufSize = vertexCount * vertexStride;
@@ -286,10 +284,10 @@ namespace he2rt {
 			}
 
 			void addMeshes(Scene& scene, std::vector<vk::AccelerationStructureGeometryKHR>& geometries, std::vector<vk::AccelerationStructureBuildRangeInfoKHR>& rangeInfos, auto meshes) {
-				for (size_t i = 0; i < meshes.get_length(); i++) {
+				for (size_t i = 0; i < meshes.size(); i++) {
 					//model.meshIds.emplace_back((uint32_t)this->meshes.size());
 
-					auto meshResult = addMesh(scene, meshes[i].as_pointer().get().value().as_structure());
+					auto meshResult = addMesh(scene, (*meshes[i].as_pointer()).as_structure());
 
 					geometries.emplace_back(std::get<vk::AccelerationStructureGeometryKHR>(meshResult));
 					rangeInfos.emplace_back(std::get<vk::AccelerationStructureBuildRangeInfoKHR>(meshResult));
@@ -297,7 +295,7 @@ namespace he2rt {
 			}
 
 			void addMeshGroup(Scene& scene, std::vector<vk::AccelerationStructureGeometryKHR>& geometries, std::vector<vk::AccelerationStructureBuildRangeInfoKHR>& rangeInfos, auto meshGroup) {
-				addMeshes(scene, geometries, rangeInfos, meshGroup.get_field<"opaqueMeshes">().as_pointer().get().value().as_carray());
+				addMeshes(scene, geometries, rangeInfos, (*meshGroup.get_field<"opaqueMeshes">().as_pointer()).as_carray());
 				//addMeshes(scene, geometries, rangeInfos, meshGroup.get_field<"transparentMeshes">().as_pointer().get().value().as_carray());
 				//addMeshes(scene, geometries, rangeInfos, meshGroup.get_field<"punchthroughMeshes">().as_pointer().get().value().as_carray());
 			}
@@ -308,9 +306,9 @@ namespace he2rt {
 
 				//std::cout << "Mesh group count: " << contexts.get_field<"meshGroupCount">().as_primitive().as<unsigned int>() << std::endl;
 
-				auto meshGroups = contexts.get_field<"meshGroups">().as_pointer().get().value().as_carray();
+				auto meshGroups = (*contexts.get_field<"meshGroups">().as_pointer()).as_carray();
 
-				addMeshGroup(scene, geometries, rangeInfos, meshGroups[0].as_pointer().get().value().as_structure());
+				addMeshGroup(scene, geometries, rangeInfos, (*meshGroups[0].as_pointer()).as_structure());
 
 				return scene.device.buildBLAS(geometries, rangeInfos);
 			}
@@ -366,7 +364,7 @@ namespace he2rt {
 		Scene(Device& device);
 
 		void addModelContexts(const std::string& name, auto contexts) {
-			if (contexts.get_field<"meshGroups">().as_pointer().get().value().as_carray()[0].as_pointer().get().value().as_structure().get_field<"opaqueMeshCount">().as_primitive().as<unsigned int>() > 0) {
+			if ((*(*contexts.get_field<"meshGroups">().as_pointer()).as_carray()[0].as_pointer()).as_structure().get_field<"opaqueMeshCount">().as_primitive().as<unsigned int>() > 0) {
 				auto modelId = models.size();
 				auto& model = models.emplace_back(*this, contexts);
 				shaderModels.emplace_back((shaders::Mesh*)model.meshBuffer.deviceAddress);
@@ -374,9 +372,9 @@ namespace he2rt {
 			}
 		}
 
-		template<bool byteswap_offsets = true, bool relative_offsets = false>
-		void addModel(const std::string& name, std::istream& stream) {
-			rip::binary::containers::mirage::v2::MirageResourceImageReader<unsigned int, byteswap_offsets, relative_offsets> reader{ stream };
+		template<typename BinaryInputStreamType>
+		void addModel(const std::string& name, BinaryInputStreamType& stream) {
+			rip::binary::containers::mirage::v2::MirageResourceImageReader reader{ stream };
 
 			auto rootNode = reader.get_root_node();
 
@@ -385,8 +383,8 @@ namespace he2rt {
 					if (modelChild.header.magic == "Contexts") {
 						auto& stream = modelChild.get_stream();
 
-						ucsl::reflection::providers::BoundProvider::RootType refl{ ucsl::reflection::providers::simplerfl<ucsl::reflection::game_interfaces::standalone::StandaloneGameInterface, unsigned int>::Type<ucsl::resources::model::v5::reflections::ModelContexts>{} };
-						typename rip::accessors::binary_istream<std::remove_reference_t<decltype(stream)>>::template ValueAccessor<decltype(refl)> acc{ stream, refl };
+						ucsl::reflection::providers::simplerfl<ucsl::reflection::game_interfaces::standalone::StandaloneGameInterface>::RootType<ucsl::resources::model::v5::reflections::ModelContexts> refl{};
+						typename rip::binary::accessors::template binary_istream<std::remove_reference_t<decltype(stream)>>::template ValueAccessor<decltype(refl)> acc{ stream, refl };
 
 						addModelContexts(name, acc.as_structure());
 
@@ -412,9 +410,9 @@ namespace he2rt {
 			}
 		}
 
-		template<bool byteswap_offsets = true, bool relative_offsets = false>
-		void addTerrainModel(const std::string& name, std::istream& stream) {
-			rip::binary::containers::mirage::v2::MirageResourceImageReader<unsigned int, byteswap_offsets, relative_offsets> reader{ stream };
+		template<typename BinaryInputStreamType>
+		void addTerrainModel(const std::string& name, BinaryInputStreamType& stream) {
+			rip::binary::containers::mirage::v2::MirageResourceImageReader reader{ stream };
 
 			auto rootNode = reader.get_root_node();
 
@@ -423,8 +421,8 @@ namespace he2rt {
 					if (modelChild.header.magic == "Contexts") {
 						auto& stream = modelChild.get_stream();
 
-						ucsl::reflection::providers::BoundProvider::RootType refl{ ucsl::reflection::providers::simplerfl<ucsl::reflection::game_interfaces::standalone::StandaloneGameInterface, unsigned int>::Type<ucsl::resources::model::v5::reflections::TerrainModelContexts>{} };
-						typename rip::accessors::binary_istream<std::remove_reference_t<decltype(stream)>>::template ValueAccessor<decltype(refl)> acc{ stream, refl };
+						ucsl::reflection::providers::simplerfl<ucsl::reflection::game_interfaces::standalone::StandaloneGameInterface>::RootType<ucsl::resources::model::v5::reflections::TerrainModelContexts> refl{};
+						typename rip::binary::accessors::template binary_istream<std::remove_reference_t<decltype(stream)>>::template ValueAccessor<decltype(refl)> acc{ stream, refl };
 
 						addModelContexts(name, acc.as_structure());
 
@@ -452,7 +450,6 @@ namespace he2rt {
 
 		void addTextureStreamingPackage(const std::string& name, const std::string& filename);
 		void addTexture(const std::string& name, const std::string& filename);
-		void addMaterial(const std::string& name, std::istream& stream);
 		void addMaterial(const std::string& name, const std::string& filename);
 		void addMaterialShader(const std::string& name, const uint32_t* data, size_t size, const MaterialShader::Reflection& reflection);
 		void addMaterialShader(const std::string& name, std::istream& stream);
@@ -460,7 +457,6 @@ namespace he2rt {
 		void addTerrainModel(const std::string& name, const std::string& filename);
 		void addModelInstance(const std::string& modelName, const Eigen::Affine3f& transform);
 		void addModelInstances(const std::string& filename);
-		void addModelInstances(std::istream& stream);
 
 		void generateMaterialBuffer();
 		void generateModelBuffer();
@@ -472,5 +468,6 @@ namespace he2rt {
 		void addTexture(const std::string& name, const DDSImageCreateInfo& ddsImage, uint8_t* data, size_t size);
 		void addStandardTexture(const std::string& name, uint8_t* data, size_t size);
 		void addStreamingTexture(const std::string& name, uint8_t* data, size_t size);
+		std::unique_ptr<uint8_t[]> loadFile(const std::string& filename);
 	};
 }
